@@ -57,7 +57,7 @@ The workflow uses the repository's built-in `GITHUB_TOKEN`; only the publishing 
 ```sh
 python3 -m unittest discover -s tools/tests -v
 # Run from a clean committed source tree, choosing unused output filenames:
-ANDRILOFT_VERSION=0.3.1 ANDRILOFT_BUILD_NUMBER="$(git rev-list --count HEAD)" \
+ANDRILOFT_VERSION=0.3.2 ANDRILOFT_BUILD_NUMBER="$(git rev-list --count HEAD)" \
   SPARKLE_PRIVATE_KEY="$(cat /secure/path/sparkle-private-key)" \
   ANDRILOFT_OPENSSL="$(brew --prefix openssl@3)/bin/openssl" ./tools/build-release.sh
 ```

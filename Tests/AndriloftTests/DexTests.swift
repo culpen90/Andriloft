@@ -1,7 +1,77 @@
 import XCTest
-import AndriloftCore
+@testable import AndriloftCore
 
 final class DexTests: XCTestCase {
+    func testMemberReferencesPreserveExactUTF16Identity() {
+        let firstClass = "Ldemo/\u{00e9};", secondClass = "Ldemo/e\u{0301};"
+        for (owner, name, descriptor) in [
+            (secondClass, "run", "()" + firstClass),
+            (firstClass, "cafe\u{0301}", "()" + firstClass),
+            (firstClass, "run", "()" + secondClass)
+        ] {
+            let firstName = name == "run" ? "run" : "caf\u{00e9}"
+            let first = DexMethodReference(owner: firstClass, name: firstName, descriptor: "()" + firstClass)
+            let second = DexMethodReference(owner: owner, name: name, descriptor: descriptor)
+            XCTAssertNotEqual(first, second)
+            XCTAssertEqual(Set([first, second, first]).count, 2)
+        }
+        for (owner, name, type) in [
+            (secondClass, "value", firstClass),
+            (firstClass, "cafe\u{0301}", firstClass),
+            (firstClass, "value", secondClass)
+        ] {
+            let firstName = name == "value" ? "value" : "caf\u{00e9}"
+            let first = DexFieldReference(owner: firstClass, name: firstName, type: firstClass)
+            let second = DexFieldReference(owner: owner, name: name, type: type)
+            XCTAssertNotEqual(first, second)
+            XCTAssertEqual(Set([first, second, first]).count, 2)
+        }
+    }
+
+    func testClassNamesPreserveExactUTF16Identity() throws {
+        for names in [["Ldemo/\u{1fd3};", "Ldemo/\u{0390};"],
+                      ["Ldemo/\u{00e9};", "Ldemo/e\u{0301};"],
+                      ["Ldemo/\u{212a};", "Ldemo/K;"]] {
+            XCTAssertEqual(names[0], names[1]) // Swift considers these canonically equivalent.
+            XCTAssertNotEqual(Array(names[0].utf16), Array(names[1].utf16))
+            let file = try DexFile(data: classDefinitionsDEX(names))
+            XCTAssertEqual(file.classes.map { Array($0.type.utf16) }, names.map { Array($0.utf16) })
+        }
+    }
+
+    func testExactDuplicateClassNamesStillFail() {
+        XCTAssertThrowsError(try DexFile(data: classDefinitionsDEX(["Ldemo/\u{0390};", "Ldemo/\u{0390};"]))) { error in
+            guard case DexError.malformed(let message) = error else { return XCTFail("Expected malformed DEX, received \(error)") }
+            XCTAssertTrue(message.hasPrefix("Duplicate class "))
+        }
+    }
+
+    func testVMKeepsCanonicallyEquivalentClassesSeparate() throws {
+        let names = ["Ldemo/\u{1fd3};", "Ldemo/\u{0390};"]
+        let file = try DexFile(data: classDefinitionsDEX(names))
+        let vm = DexVM(files: [file], host: RejectingDexHost())
+        for name in names {
+            let object = try vm.newObject(type: name)
+            XCTAssertEqual(Array(object.type.utf16), Array(name.utf16))
+        }
+    }
+
+    func testMemberOwnersRequireExactUTF16Identity() throws {
+        let names = ["Ldemo/\u{00e9};", "Ldemo/e\u{0301};"]
+        let valid = try DexFile(data: classDefinitionsDEX(names, fieldOwner: 0, methodOwner: 0))
+        XCTAssertEqual(valid.classes[0].staticFields.count, 1)
+        XCTAssertEqual(valid.classes[0].methods.count, 1)
+        for (fieldOwner, methodOwner, expected): (Int?, Int?, String) in [
+            (1, nil, "Field belongs to another class"),
+            (nil, 1, "Method belongs to another class")
+        ] {
+            XCTAssertThrowsError(try DexFile(data: classDefinitionsDEX(names, fieldOwner: fieldOwner, methodOwner: methodOwner))) { error in
+                guard case DexError.malformed(let message) = error else { return XCTFail("Expected malformed DEX, received \(error)") }
+                XCTAssertEqual(message, expected)
+            }
+        }
+    }
+
     func testTruncatedAndInvalidTablesThrow() throws {
         let valid = minimalDEX(instructions: [0x7012, 0x000f], registers: 1)
         XCTAssertEqual(try DexFile(data: valid).classes.first?.type, "Ldemo/Program;")
@@ -108,6 +178,69 @@ final class DexTests: XCTestCase {
         write32(UInt32(data.count), at: 32, in: &data)
         write32(UInt32(data.count - 192), at: 104, in: &data)
         write32(192, at: 108, in: &data)
+        return data
+    }
+    /// Class descriptors are encoded independently so canonical-equivalent names
+    /// retain their exact code units, as they do in third-party obfuscated APKs.
+    private func classDefinitionsDEX(_ names: [String], fieldOwner: Int? = nil, methodOwner: Int? = nil) -> Data {
+        let strings = names + ["I", "run", "value"]
+        let stringOffset = 112
+        let typeOffset = stringOffset + strings.count * 4
+        let protoOffset = typeOffset + (names.count + 1) * 4
+        let fieldOffset = protoOffset + 12
+        let methodOffset = fieldOffset + (fieldOwner == nil ? 0 : 8)
+        let classOffset = methodOffset + (methodOwner == nil ? 0 : 8)
+        let dataOffset = classOffset + names.count * 32
+        var data = Data(repeating: 0, count: dataOffset)
+        data.replaceSubrange(0..<8, with: [0x64,0x65,0x78,0x0a,0x30,0x33,0x35,0])
+        write32(112, at: 36, in: &data)
+        write32(0x12345678, at: 40, in: &data)
+        for (header, count, offset): (Int, Int, Int) in [
+            (56, strings.count, stringOffset), (64, names.count + 1, typeOffset),
+            (72, 1, protoOffset), (80, fieldOwner == nil ? 0 : 1, fieldOffset),
+            (88, methodOwner == nil ? 0 : 1, methodOffset), (96, names.count, classOffset)
+        ] {
+            write32(UInt32(count), at: header, in: &data)
+            write32(UInt32(offset), at: header + 4, in: &data)
+        }
+        for (index, text) in strings.enumerated() {
+            write32(UInt32(data.count), at: stringOffset + index * 4, in: &data)
+            data.append(contentsOf: uleb(text.utf16.count))
+            data.append(contentsOf: text.utf8)
+            data.append(0)
+        }
+        for index in 0...names.count { write32(UInt32(index), at: typeOffset + index * 4, in: &data) }
+        write32(UInt32(names.count), at: protoOffset, in: &data)
+        write32(UInt32(names.count), at: protoOffset + 4, in: &data)
+        if let fieldOwner {
+            write16(UInt16(fieldOwner), at: fieldOffset, in: &data)
+            write16(UInt16(names.count), at: fieldOffset + 2, in: &data)
+            write32(UInt32(names.count + 2), at: fieldOffset + 4, in: &data)
+        }
+        if let methodOwner {
+            write16(UInt16(methodOwner), at: methodOffset, in: &data)
+            write32(UInt32(names.count + 1), at: methodOffset + 4, in: &data)
+        }
+        for index in names.indices {
+            let at = classOffset + index * 32
+            write32(UInt32(index), at: at, in: &data)
+            write32(1, at: at + 4, in: &data)
+            write32(UInt32.max, at: at + 8, in: &data)
+            write32(UInt32.max, at: at + 16, in: &data)
+        }
+        if fieldOwner != nil || methodOwner != nil {
+            write32(UInt32(data.count), at: classOffset + 24, in: &data)
+            data.append(contentsOf: [fieldOwner == nil ? 0 : 1, 0, methodOwner == nil ? 0 : 1, 0])
+            if fieldOwner != nil { data.append(contentsOf: [0, 9]) }
+            if methodOwner != nil {
+                data.append(0)
+                data.append(contentsOf: uleb(0x109)) // public static native, no code item
+                data.append(0)
+            }
+        }
+        write32(UInt32(data.count), at: 32, in: &data)
+        write32(UInt32(data.count - dataOffset), at: 104, in: &data)
+        write32(UInt32(dataOffset), at: 108, in: &data)
         return data
     }
     private func uleb(_ number: Int) -> [UInt8] {

@@ -36,6 +36,9 @@ public final class DexObject {
     public let id = UUID()
     public let type: String
     public var fields: [String: DexValue] = [:]
+    // Guest field identity must not use Swift's canonical String equality.
+    // The public string-keyed fields remain storage for native framework shims.
+    var dexFields: [DexFieldReference: DexValue] = [:]
     public init(type: String) { self.type = type }
 }
 

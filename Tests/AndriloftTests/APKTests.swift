@@ -1,4 +1,5 @@
 import XCTest
+import CZlib
 @testable import AndriloftCore
 
 final class APKTests: XCTestCase {
@@ -35,12 +36,47 @@ final class APKTests: XCTestCase {
         XCTAssertEqual(try archive.read("res/-p.png"), Data([3, 4]))
     }
 
+    func testHighlyCompressedAPKAssetsRemainWithinExpansionLimits() throws {
+        let asset = Data(repeating: 0, count: 1024 * 1024)
+        let compressed = try APKFixture.deflate(asset)
+        XCTAssertGreaterThan(asset.count / compressed.count, 500)
+        let data = APKFixture.zip([
+            ("AndroidManifest.xml", APKFixture.manifest(), true),
+            ("assets/bin/Data/zero-filled.assets", asset, true)
+        ], compressedEntries: ["assets/bin/Data/zero-filled.assets": compressed])
+        let archive = try APKZIP(data: data)
+        XCTAssertEqual(try archive.read("assets/bin/Data/zero-filled.assets"), asset)
+
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".apk")
+        defer { try? FileManager.default.removeItem(at: file) }
+        try data.write(to: file)
+        XCTAssertEqual(try APKPackage(url: file).metadata.packageName, "com.example.demo")
+
+        // A highly compressed stream cannot expand past the header's declared size.
+        let understated = APKFixture.zip([("asset", Data([0]), true)], compressedEntries: ["asset": compressed])
+        let understatedArchive = try APKZIP(data: understated)
+        XCTAssertThrowsError(try understatedArchive.read("asset"))
+    }
+
     func testZIPRejectsOverlappingAndOversizedEntries() {
         var oversized = APKFixture.zip([("file", Data([1]), true)])
         let central = 30 + 4 + 6
         oversized.replaceSubrange(22..<26, with: APKFixture.le32(200 * 1024 * 1024))
         oversized.replaceSubrange((central + 24)..<(central + 28), with: APKFixture.le32(200 * 1024 * 1024))
         XCTAssertThrowsError(try APKZIP(data: oversized))
+
+        // Each entry is within the per-entry cap, but their combined expansion is not.
+        var totalExceeded = APKFixture.zip((0..<5).map { ("\($0)", Data([0]), true) })
+        let localLength = 30 + 1 + 6
+        let centralStart = localLength * 5
+        for index in 0..<5 {
+            let declaredSize: UInt32 = index == 4 ? 1 : 128 * 1024 * 1024
+            let localSize = index * localLength + 22
+            let centralSize = centralStart + index * 47 + 24
+            totalExceeded.replaceSubrange(localSize..<(localSize + 4), with: APKFixture.le32(declaredSize))
+            totalExceeded.replaceSubrange(centralSize..<(centralSize + 4), with: APKFixture.le32(declaredSize))
+        }
+        XCTAssertThrowsError(try APKZIP(data: totalExceeded))
 
         var badLocal = APKFixture.zip([("file", Data([1]), false)])
         badLocal[30] = 0x61
@@ -245,13 +281,34 @@ private enum APKFixture {
         }
         return crc ^ UInt32.max
     }
-    static func zip(_ files: [(String, Data, Bool)]) -> Data {
+    static func deflate(_ data: Data) throws -> Data {
+        var output = Data(count: Int(compressBound(uLong(data.count))))
+        var stream = z_stream()
+        let status: Int32 = data.withUnsafeBytes { input in
+            output.withUnsafeMutableBytes { buffer in
+                stream.next_in = UnsafeMutablePointer(mutating: input.bindMemory(to: Bytef.self).baseAddress)
+                stream.avail_in = uInt(input.count)
+                stream.next_out = buffer.bindMemory(to: Bytef.self).baseAddress
+                stream.avail_out = uInt(buffer.count)
+                let initialized = deflateInit2_(&stream, Z_BEST_COMPRESSION, Z_DEFLATED, -MAX_WBITS, 8,
+                                                Z_DEFAULT_STRATEGY, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size))
+                guard initialized == Z_OK else { return initialized }
+                defer { deflateEnd(&stream) }
+                return CZlib.deflate(&stream, Z_FINISH)
+            }
+        }
+        guard status == Z_STREAM_END else { throw APKError.malformedArchive("Test fixture compression failed.") }
+        output.count = Int(stream.total_out)
+        return output
+    }
+    static func zip(_ files: [(String, Data, Bool)], compressedEntries: [String: Data] = [:]) -> Data {
         var local = Data()
         var central = Data()
         for (name, data, deflated) in files {
             let nameData = Data(name.utf8)
             let offset = local.count
-            let compressed = deflated ? Data([1]) + le16(UInt16(data.count)) + le16(~UInt16(data.count)) + data : data
+            let compressed = compressedEntries[name]
+                ?? (deflated ? Data([1]) + le16(UInt16(data.count)) + le16(~UInt16(data.count)) + data : data)
             let method: UInt16 = deflated ? 8 : 0
             let common = concat(le16(0), le16(method), le16(0), le16(0), le32(crc(data)), le32(UInt32(compressed.count)), le32(UInt32(data.count)))
             local += concat(le32(0x04034b50), le16(20), common, le16(UInt16(nameData.count)), le16(0), nameData, compressed)

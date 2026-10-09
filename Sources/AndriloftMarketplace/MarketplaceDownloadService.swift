@@ -79,6 +79,15 @@ public actor MarketplaceDownloadService {
             }
             _ = try package.dexData.map { try DexFile(data: $0) }
         } catch let error as MarketplaceError { throw error }
+        catch APKError.unsupportedArchive {
+            throw MarketplaceError.invalidDownload("This APK exceeds Andriloft’s archive limits or uses an unsupported archive format.")
+        }
+        catch DexError.unsupported {
+            throw MarketplaceError.invalidDownload("This APK uses Android bytecode that Andriloft does not support yet.")
+        }
+        catch DexError.limit {
+            throw MarketplaceError.invalidDownload("This APK exceeds Andriloft’s bytecode validation limits.")
+        }
         catch { throw MarketplaceError.invalidDownload("The downloaded file is not a valid standalone APK. Please try again.") }
     }
 

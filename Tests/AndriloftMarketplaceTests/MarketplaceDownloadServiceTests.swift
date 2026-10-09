@@ -32,6 +32,44 @@ final class MarketplaceDownloadServiceTests: XCTestCase {
         XCTAssertEqual(resolved, older)
     }
 
+    func testDownloadsAPKWithHighlyCompressedGameAsset() async throws {
+        try await assertFixtureDownloads("HighlyCompressedAndroid")
+    }
+
+    func testDownloadsAPKWithDistinctUnicodeClassNames() async throws {
+        try await assertFixtureDownloads("UnicodeIdentifiersAndroid")
+    }
+
+    private func assertFixtureDownloads(_ name: String) async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let fixture = Bundle.module.url(forResource: name, withExtension: "apk", subdirectory: "Fixtures")!
+        let data = try Data(contentsOf: fixture)
+        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        let selected = variant("1", hash: hash)
+        let service = MarketplaceDownloadService(catalog: CatalogStub(candidates: [selected]), selector: SelectorStub(selected: selected), directory: folder, downloader: FileStub(source: fixture))
+        let result = try await service.download(app) { _ in }
+        XCTAssertEqual(try Data(contentsOf: result), data)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path), [result.lastPathComponent])
+    }
+
+    func testUnsupportedArchiveIsNotReportedAsCorruptAPK() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let fixture = Bundle.module.url(forResource: "HelloAndroid", withExtension: "apk", subdirectory: "Fixtures")!
+        var data = try Data(contentsOf: fixture)
+        let central = try XCTUnwrap(data.range(of: Data([0x50, 0x4b, 0x01, 0x02])))
+        data[central.lowerBound + 8] |= 1 // Encrypted ZIP entry; unsupported by the reader.
+        let source = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".apk")
+        defer { try? FileManager.default.removeItem(at: source) }
+        try data.write(to: source)
+        let selected = variant("1")
+        let service = MarketplaceDownloadService(catalog: CatalogStub(candidates: [selected]), selector: SelectorStub(selected: selected), directory: folder, downloader: FileStub(source: source))
+        do { _ = try await service.download(app) { _ in }; XCTFail("Unsupported archive accepted") }
+        catch { XCTAssertEqual(error as? MarketplaceError, .invalidDownload("This APK exceeds Andriloft’s archive limits or uses an unsupported archive format.")) }
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)
+    }
+
     func testRejectsInventedSelectionBeforeResolvingOrDownloading() async throws {
         let catalog = CatalogStub(candidates: [variant("1")])
         let selector = SelectorStub(selected: variant("99"))
