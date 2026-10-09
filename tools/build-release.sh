@@ -25,7 +25,7 @@ cleanup() {
 }
 trap cleanup EXIT
 mkdir -p "$WORK/dist"
-swift test --scratch-path "$WORK/tests" --xunit-output "$WORK/test-results.xml"
+swift test --scratch-path "$WORK/tests" 2>&1 | tee "$WORK/test-results.txt"
 ANDRILOFT_UNIVERSAL=1 ANDRILOFT_SCRATCH_PATH="$WORK/swiftbuild" \
     ANDRILOFT_APP_OUTPUT="$WORK/Andriloft.app" \
     ANDRILOFT_DEMO_APK="$ROOT/Tests/AndriloftTests/Fixtures/HelloAndroid.apk" \
@@ -57,7 +57,7 @@ codesign --verify --deep --strict "$DMG_MOUNT/Andriloft.app"
 "$DMG_MOUNT/Andriloft.app/Contents/MacOS/andriloft-check" --self-test "$DMG_MOUNT/Andriloft.app/Contents/Resources/HelloAndroid.apk"
 hdiutil detach "$DMG_MOUNT"
 DMG_MOUNT=""
-python3 "$ROOT/tools/release-manifest.py" "$ROOT" "$APP" "$WORK/dist" "$WORK/test-results.xml" "${EXECUTION_ARCHS[@]}"
+python3 "$ROOT/tools/release-manifest.py" "$ROOT" "$APP" "$WORK/dist" "$WORK/test-results.txt" "${EXECUTION_ARCHS[@]}"
 (cd "$WORK/dist" && /usr/bin/shasum -a 256 "$PREFIX.zip" "$PREFIX.dmg" release.json > SHA256SUMS.txt)
 for name in "$PREFIX.zip" "$PREFIX.dmg" SHA256SUMS.txt release.json; do
     cp "$WORK/dist/$name" "$OUTPUT/$name"

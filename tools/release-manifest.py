@@ -8,7 +8,6 @@ import plistlib
 import re
 import subprocess
 import sys
-import xml.etree.ElementTree as ET
 
 root, app, destination, test_report = map(pathlib.Path, sys.argv[1:5])
 execution_architectures = sys.argv[5:]
@@ -41,10 +40,12 @@ assets = [{"name": path.name, "size": path.stat().st_size, "sha256": digest(path
           for path in sorted(destination.iterdir()) if path.suffix in {".zip", ".dmg"}]
 if len(assets) != 2:
     raise SystemExit("Expected one ZIP and one DMG")
-results = ET.parse(test_report).getroot()
-tests = list(results.iter("testcase"))
-failures = len(list(results.iter("failure"))) + len(list(results.iter("error")))
-if not tests or failures:
+results = test_report.read_text()
+summaries = re.findall(r"Executed (\d+) tests?, with (\d+) failures?", results)
+if not summaries or "Test Suite 'All tests' passed" not in results:
+    raise SystemExit("Release test output does not prove a completed passing test suite")
+tests, failures = map(int, summaries[-1])
+if tests == 0 or failures:
     raise SystemExit("Release test report is empty or contains failures")
 payload = {
     "schema_version": 1,
@@ -58,7 +59,7 @@ payload = {
     "swift_version": subprocess.check_output(["swift", "--version"], text=True).strip(),
     "app_binary_sha256": digest(binary),
     "bundled_example_sha256": digest(app / "Contents/Resources/HelloAndroid.apk"),
-    "validation": {"tests": len(tests), "failures": failures, "execution_architectures": execution_architectures,
+    "validation": {"tests": tests, "failures": failures, "execution_architectures": execution_architectures,
                    "extracted_zip_signature": True, "extracted_zip_smoke": True,
                    "dmg_image_integrity": True, "mounted_dmg_signature": True,
                    "mounted_dmg_smoke": True},
