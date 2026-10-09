@@ -35,7 +35,13 @@ elif [[ "${ANDRILOFT_UNIVERSAL:-0}" != "0" ]]; then
 fi
 swift build "${BUILD_FLAGS[@]}"
 BIN_DIR="$(swift build "${BUILD_FLAGS[@]}" --show-bin-path)"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+SPARKLE_ROOT="${ANDRILOFT_SCRATCH_PATH:-$ROOT/.build}/artifacts/sparkle/Sparkle"
+SPARKLE_FRAMEWORK="$SPARKLE_ROOT/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+[[ -d "$SPARKLE_FRAMEWORK" ]] || { printf 'Resolved Sparkle framework is missing: %s\n' "$SPARKLE_FRAMEWORK" >&2; exit 1; }
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
+# Preserve symlinks, executables, and the upstream signatures of Sparkle's helpers.
+/usr/bin/ditto --norsrc --noextattr --noqtn "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/Sparkle.framework"
+cp "$SPARKLE_ROOT/LICENSE" "$APP/Contents/Resources/Sparkle-LICENSE.txt"
 cp "$ROOT/Assets/Info.plist" "$APP/Contents/Info.plist"
 python3 "$ROOT/tools/check-release-version.py" stamp "$APP/Contents/Info.plist" "$VERSION" "$BUILD_NUMBER"
 cp "$BIN_DIR/Andriloft" "$APP/Contents/MacOS/Andriloft"
@@ -63,6 +69,7 @@ payload = {"version": info["CFBundleShortVersionString"], "build": info["CFBundl
 (app / "Contents/Resources/build-info.json").write_text(json.dumps(payload, indent=2) + "\n")
 PY
 /usr/bin/xattr -cr "$APP"
+codesign --force --sign - --timestamp=none "$APP/Contents/Frameworks/Sparkle.framework"
 codesign --force --sign - --timestamp=none "$APP/Contents/MacOS/andriloft-check"
 codesign --force --sign - "$APP"
 codesign --verify --deep --strict "$APP"

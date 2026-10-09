@@ -15,6 +15,8 @@ No Android SDK or developer tools are needed to run the downloaded app. Open And
 
 The app uses an ad hoc code signature and is not notarized or signed with an Apple Developer ID. If macOS blocks the first launch, follow the per-app **System Settings → Privacy & Security → Open Anyway** steps in the [installation guide](docs/INSTALL.md). This distribution requires no paid Apple Developer account. See the [release notes](docs/releases/v0.1.0.md) for compatibility limits.
 
+Choose **Check for Updates…** in Andriloft's sidebar or app menu, then **Install Update** when a new version is available. Andriloft verifies, downloads, installs, and restarts automatically, keeping your imported APK library and saved preferences. Open Android app windows close for the restart. Releases predating the updater need one manual installation of an updater-enabled build.
+
 ## Run
 
 Requires macOS 13 or newer. Build with Xcode Command Line Tools and Swift 5.9 or newer:
@@ -73,16 +75,16 @@ Android tools are used only to compile test APKs. There is no Android runtime de
 To build distribution ZIP and DMG files from a clean committed source tree:
 
 ```sh
-./tools/build-release.sh
+SPARKLE_PRIVATE_KEY="<exported Sparkle key>" ./tools/build-release.sh
 ```
 
-This builds fresh universal Release executables, runs tests and APK execution checks, verifies the extracted ZIP and mounted DMG, and writes checksums and source provenance under `build/release/`. On Apple Silicon with Rosetta already installed, set `ANDRILOFT_VERIFY_ROSETTA=1` to also execute the Intel checker. Signing is ad hoc; no Apple account or signing credentials are required.
+This builds fresh universal Release executables, runs tests and APK execution checks, verifies the extracted ZIP and mounted DMG, and writes a signed update feed, checksums, and source provenance under `build/release/`. Local release publishing needs the exported Sparkle update key and OpenSSL 3; normal app builds do not. On Apple Silicon with Rosetta already installed, set `ANDRILOFT_VERIFY_ROSETTA=1` to also execute the Intel checker. macOS signing is ad hoc; no Apple account is required. See the [release guide](docs/RELEASING.md) for key handling.
 
 ## Automatic releases
 
 Every push or merge to `main` automatically publishes a new GitHub release after tests and packaging checks pass. The bot examines all commits since the last published release: `feat:` increments minor, `!` or a `BREAKING CHANGE:` footer increments major, and other changes increment patch. Multiple changes use the largest increment.
 
-Each version gets newly built universal ZIP and DMG downloads, matching app version metadata, an increasing build number, checksums, and source provenance. Releases remain drafts until all uploaded files have been downloaded again and verified. The bot uses GitHub's built-in token and free ad hoc signing; no Apple Developer account, certificates, or extra secrets are needed. See [the release guide](docs/RELEASING.md) for manual increments and failure recovery.
+Each version gets newly built universal ZIP and DMG downloads, a signed Sparkle appcast, matching app version metadata, an increasing build number, checksums, and source provenance. Releases remain drafts until all uploaded files have been downloaded again and verified. The bot uses GitHub's built-in token, free ad hoc macOS signing, and the repository's `SPARKLE_PRIVATE_KEY` secret to authenticate updates. No Apple Developer account or certificate is needed. See [the release guide](docs/RELEASING.md) for manual increments and failure recovery.
 
 ## Architecture
 

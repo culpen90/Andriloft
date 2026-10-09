@@ -1,12 +1,33 @@
 import copy
+import base64
 import importlib.util
 import json
+import os
 import pathlib
 import plistlib
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
 import zipfile
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+from sparkle_updates import REPOSITORY, SPARKLE_NS, SPARKLE_VERSION, validate_appcast
+
+# Public RFC 8032 test vector, used only for deterministic test signatures.
+TEST_SEED = bytes.fromhex("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
+TEST_PUBLIC_KEY = base64.b64encode(bytes.fromhex("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a")).decode()
+
+
+def sign_test_file(filename):
+    with tempfile.TemporaryDirectory() as temporary:
+        private = pathlib.Path(temporary) / "test-key.der"
+        private.write_bytes(bytes.fromhex("302e020100300506032b657004220420") + TEST_SEED)
+        result = subprocess.run([os.environ.get("ANDRILOFT_OPENSSL", "openssl"), "pkeyutl", "-sign", "-inkey", str(private),
+                                 "-keyform", "DER", "-rawin", "-in", str(filename)],
+                                check=True, capture_output=True)
+        return base64.b64encode(result.stdout).decode()
 
 
 SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "publish-release.py"
@@ -16,7 +37,7 @@ SPEC.loader.exec_module(publisher)
 
 
 class FakeGitHub:
-    repository = "example/Andriloft"
+    repository = REPOSITORY
 
     def __init__(self, releases=(), tag_sha=None, comparison="identical"):
         self.existing_releases = copy.deepcopy(list(releases))
@@ -70,7 +91,16 @@ class ReleaseFixture(unittest.TestCase):
         self.plan = {"version": "1.2.3", "tag": "v1.2.3", "build": 7,
                      "source_sha": "a" * 40, "skip": False}
         self.prefix = "Andriloft-1.2.3-macOS-universal"
-        self.info = {"CFBundleShortVersionString": "1.2.3", "CFBundleVersion": "7"}
+        self.info = {"CFBundleShortVersionString": "1.2.3", "CFBundleVersion": "7",
+                     "LSMinimumSystemVersion": "13.0", "SUPublicEDKey": TEST_PUBLIC_KEY,
+                     "SUFeedURL": f"https://github.com/{REPOSITORY}/releases/latest/download/appcast.xml",
+                     "SURequireSignedFeed": True, "SUVerifyUpdateBeforeExtraction": True,
+                     "SUSignedFeedFailureExpirationInterval": 0}
+        source_info = pathlib.Path(self.workspace.name) / "trusted-info.plist"
+        source_info.write_bytes(plistlib.dumps(self.info))
+        self.source_info_patch = mock.patch.object(publisher, "SOURCE_INFO", source_info)
+        self.source_info_patch.start()
+        self.addCleanup(self.source_info_patch.stop)
         self.build = {"version": "1.2.3", "build": "7", "source_sha": "a" * 40,
                       "source_dirty": False, "configuration": "release", "signing": "ad-hoc", "notarized": False}
         self.manifest = {"version": "1.2.3", "tag": "v1.2.3", "bundle_version": "7",
@@ -80,7 +110,8 @@ class ReleaseFixture(unittest.TestCase):
                              "tests": 25, "failures": 0, "extracted_zip_signature": True,
                              "extracted_zip_smoke": True, "extracted_zip_version_provenance": True,
                              "dmg_image_integrity": True, "mounted_dmg_signature": True,
-                             "mounted_dmg_smoke": True, "mounted_dmg_version_provenance": True}}
+                             "mounted_dmg_smoke": True, "mounted_dmg_version_provenance": True,
+                             "sparkle_archive_signature": True, "sparkle_feed_signature": True}}
         self.write_archives()
         self.refresh_manifest()
 
@@ -88,9 +119,34 @@ class ReleaseFixture(unittest.TestCase):
         with zipfile.ZipFile(self.directory / (self.prefix + ".zip"), "w") as archive:
             archive.writestr("Andriloft.app/Contents/Info.plist", plistlib.dumps(self.info))
             archive.writestr("Andriloft.app/Contents/Resources/build-info.json", json.dumps(self.build))
+            archive.writestr("Andriloft.app/Contents/Frameworks/Sparkle.framework/Versions/B/Resources/Info.plist",
+                             plistlib.dumps({"CFBundleIdentifier": "org.sparkle-project.Sparkle",
+                                              "CFBundleShortVersionString": SPARKLE_VERSION}))
         (self.directory / (self.prefix + ".dmg")).write_bytes(b"verified DMG fixture")
 
-    def refresh_manifest(self):
+    def write_appcast(self):
+        archive = self.directory / (self.prefix + ".zip")
+        signature = sign_test_file(archive)
+        appcast = self.directory / "appcast.xml"
+        content = (f'<?xml version="1.0" encoding="utf-8"?>\n'
+                   f'<rss version="2.0" xmlns:sparkle="{SPARKLE_NS}"><channel><title>Andriloft</title><item>'
+                   f'<sparkle:version>7</sparkle:version><sparkle:shortVersionString>1.2.3</sparkle:shortVersionString>'
+                   f'<sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>'
+                   f'<enclosure url="https://github.com/{REPOSITORY}/releases/download/v1.2.3/{archive.name}" '
+                   f'sparkle:edSignature="{signature}" length="{archive.stat().st_size}" '
+                   f'type="application/octet-stream"/></item></channel></rss>\n').encode()
+        appcast.write_bytes(content)
+        feed_signature = sign_test_file(appcast)
+        appcast.write_bytes(content + (f'<!-- sparkle-signatures:\nedSignature: {feed_signature}\n'
+                                      f'length: {len(content)}\n-->\n').encode())
+        self.manifest["updater"] = {"framework": "Sparkle", "version": SPARKLE_VERSION,
+                                    "feed_url": self.info["SUFeedURL"], "public_key": self.info["SUPublicEDKey"],
+                                    "archive": archive.name, "archive_signature": signature,
+                                    "appcast_sha256": publisher.digest(appcast)}
+
+    def refresh_manifest(self, rebuild_appcast=True):
+        if rebuild_appcast:
+            self.write_appcast()
         self.manifest["assets"] = [{"name": path.name, "size": path.stat().st_size,
                                     "sha256": publisher.digest(path)}
                                    for path in sorted(self.directory.iterdir())
@@ -99,7 +155,7 @@ class ReleaseFixture(unittest.TestCase):
         self.refresh_checksums()
 
     def refresh_checksums(self):
-        names = [self.prefix + ".zip", self.prefix + ".dmg", "release.json"]
+        names = [self.prefix + ".zip", self.prefix + ".dmg", "appcast.xml", "release.json"]
         (self.directory / "SHA256SUMS.txt").write_text("".join(
             publisher.digest(self.directory / name) + "  " + name + "\n" for name in names))
 
@@ -109,7 +165,11 @@ class ReleaseFixture(unittest.TestCase):
                 "html_url": "https://github.com/example/Andriloft/releases/tag/v" + version}
 
     def publish(self, github):
+        real_run = subprocess.run
+
         def upload(command, **kwargs):
+            if command[0] != "gh":
+                return real_run(command, **kwargs)
             self.assertEqual(command[:3], ["gh", "release", "upload"])
             self.assertTrue(kwargs["check"])
             github.events.append(("upload", tuple(command)))
@@ -122,7 +182,7 @@ class ReleaseFixture(unittest.TestCase):
 class ValidateAssetsTests(ReleaseFixture):
     def test_complete_release_passes(self):
         self.assertEqual(publisher.validate_assets(self.directory, self.plan), sorted(
-            [self.prefix + ".zip", self.prefix + ".dmg", "release.json", "SHA256SUMS.txt"]))
+            [self.prefix + ".zip", self.prefix + ".dmg", "appcast.xml", "release.json", "SHA256SUMS.txt"]))
 
     def test_altered_archive_fails(self):
         with (self.directory / (self.prefix + ".dmg")).open("ab") as archive:
@@ -179,6 +239,59 @@ class ValidateAssetsTests(ReleaseFixture):
                 with self.assertRaisesRegex(ValueError, flag):
                     publisher.validate_assets(self.directory, self.plan)
                 self.manifest["validation"][flag] = True
+
+    def test_feed_tampering_fails_even_with_refreshed_manifest_and_checksums(self):
+        appcast = self.directory / "appcast.xml"
+        appcast.write_bytes(appcast.read_bytes().replace(b"Andriloft</title>", b"Other App</title>"))
+        self.manifest["updater"]["appcast_sha256"] = publisher.digest(appcast)
+        self.refresh_manifest(rebuild_appcast=False)
+        with self.assertRaisesRegex(ValueError, "signature verification failed"):
+            publisher.validate_assets(self.directory, self.plan)
+
+    def test_archive_tampering_fails_even_with_refreshed_checksums(self):
+        archive = self.directory / (self.prefix + ".zip")
+        data = bytearray(archive.read_bytes())
+        # ZIP permits trailing bytes, so embedded plist and provenance stay valid.
+        archive.write_bytes(data + b"X")
+        self.refresh_manifest(rebuild_appcast=False)
+        with self.assertRaisesRegex(ValueError, "archive length"):
+            publisher.validate_assets(self.directory, self.plan)
+
+    def test_unchanged_length_archive_tampering_fails_signature_verification(self):
+        archive = self.directory / (self.prefix + ".zip")
+        # Change the ZIP's unused comment-length field after metadata is read.
+        data = archive.read_bytes()
+        archive.write_bytes(data[:-2] + b"\x01\x00")
+        self.refresh_manifest(rebuild_appcast=False)
+        with self.assertRaisesRegex(ValueError, "signature verification failed"):
+            publisher.validate_assets(self.directory, self.plan)
+
+    def test_embedded_public_key_cannot_replace_the_trusted_key(self):
+        self.info["SUPublicEDKey"] = base64.b64encode(bytes(32)).decode()
+        self.write_archives()
+        self.refresh_manifest()
+        with self.assertRaisesRegex(ValueError, "trusted release source"):
+            publisher.validate_assets(self.directory, self.plan)
+
+    def test_signed_feed_policy_is_required(self):
+        self.info["SURequireSignedFeed"] = False
+        self.write_archives()
+        self.refresh_manifest()
+        with self.assertRaisesRegex(ValueError, "must require signed"):
+            publisher.validate_assets(self.directory, self.plan)
+
+    def test_feed_rejects_another_archive_location_even_when_signed(self):
+        appcast = self.directory / "appcast.xml"
+        content = appcast.read_bytes().split(b"<!-- sparkle-signatures:")[0]
+        content = content.replace(b"/releases/download/v1.2.3/", b"/releases/latest/download/")
+        appcast.write_bytes(content)
+        signature = sign_test_file(appcast)
+        appcast.write_bytes(content + (f'<!-- sparkle-signatures:\nedSignature: {signature}\n'
+                                      f'length: {len(content)}\n-->\n').encode())
+        self.manifest["updater"]["appcast_sha256"] = publisher.digest(appcast)
+        self.refresh_manifest(rebuild_appcast=False)
+        with self.assertRaisesRegex(ValueError, "immutable release ZIP"):
+            publisher.validate_assets(self.directory, self.plan)
 
 
 class PublishTests(ReleaseFixture):
@@ -276,7 +389,7 @@ class PublishTests(ReleaseFixture):
 
 class VerifyRemoteTests(ReleaseFixture):
     def test_actual_downloaded_bytes_are_checked(self):
-        github = publisher.GitHub("example/Andriloft")
+        github = publisher.GitHub(REPOSITORY)
         names = publisher.validate_assets(self.directory, self.plan)
         assets = [{"name": name, "state": "uploaded", "size": (self.directory / name).stat().st_size,
                    "digest": "sha256:" + publisher.digest(self.directory / name)} for name in names]
@@ -294,7 +407,7 @@ class VerifyRemoteTests(ReleaseFixture):
         process.assert_called_once()
 
     def test_download_corruption_fails_even_if_remote_metadata_matches(self):
-        github = publisher.GitHub("example/Andriloft")
+        github = publisher.GitHub(REPOSITORY)
         names = publisher.validate_assets(self.directory, self.plan)
         assets = [{"name": name, "state": "uploaded", "size": (self.directory / name).stat().st_size,
                    "digest": "sha256:" + publisher.digest(self.directory / name)} for name in names]
@@ -310,7 +423,7 @@ class VerifyRemoteTests(ReleaseFixture):
                 github.verify_remote(self.release(draft=True), self.directory, names)
 
     def test_incomplete_remote_upload_fails_before_download(self):
-        github = publisher.GitHub("example/Andriloft")
+        github = publisher.GitHub(REPOSITORY)
         names = publisher.validate_assets(self.directory, self.plan)
         assets = [{"name": name, "state": "uploaded", "size": (self.directory / name).stat().st_size}
                   for name in names]

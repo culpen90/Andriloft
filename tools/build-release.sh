@@ -16,7 +16,10 @@ SOURCE_SHA="$(git rev-parse HEAD)"
 PREFIX="Andriloft-$VERSION-macOS-universal"
 mkdir -p "$OUTPUT"
 OUTPUT="$(cd "$OUTPUT" && pwd)"
-for name in "$PREFIX.zip" "$PREFIX.dmg" SHA256SUMS.txt release.json; do
+[[ -n "${SPARKLE_PRIVATE_KEY:-}" ]] || { printf 'Set SPARKLE_PRIVATE_KEY to the exported Sparkle Ed25519 release key.\n' >&2; exit 1; }
+SPARKLE_RELEASE_KEY="$SPARKLE_PRIVATE_KEY"
+unset SPARKLE_PRIVATE_KEY
+for name in "$PREFIX.zip" "$PREFIX.dmg" appcast.xml SHA256SUMS.txt release.json; do
     [[ ! -e "$OUTPUT/$name" ]] || { printf 'Output already exists: %s\n' "$OUTPUT/$name" >&2; exit 1; }
 done
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/andriloft-release.XXXXXX")"
@@ -62,11 +65,15 @@ codesign --verify --deep --strict "$DMG_MOUNT/Andriloft.app"
 "$DMG_MOUNT/Andriloft.app/Contents/MacOS/andriloft-check" --self-test "$DMG_MOUNT/Andriloft.app/Contents/Resources/HelloAndroid.apk"
 hdiutil detach "$DMG_MOUNT"
 DMG_MOUNT=""
+SPARKLE_TOOLS="${ANDRILOFT_SPARKLE_TOOLS:-$WORK/swiftbuild/artifacts/sparkle/Sparkle/bin}"
+SPARKLE_PRIVATE_KEY="$SPARKLE_RELEASE_KEY" python3 "$ROOT/tools/build-appcast.py" --app "$APP" --archive "$WORK/dist/$PREFIX.zip" \
+    --output "$WORK/dist/appcast.xml" --tools "$SPARKLE_TOOLS"
+unset SPARKLE_RELEASE_KEY
 python3 "$ROOT/tools/release-manifest.py" "$ROOT" "$APP" "$WORK/dist" "$WORK/test-results.txt" \
     --version "$VERSION" --build-number "$BUILD_NUMBER" --source-sha "$SOURCE_SHA" \
     --execution-architectures "${EXECUTION_ARCHS[@]}"
-(cd "$WORK/dist" && /usr/bin/shasum -a 256 "$PREFIX.zip" "$PREFIX.dmg" release.json > SHA256SUMS.txt)
-for name in "$PREFIX.zip" "$PREFIX.dmg" SHA256SUMS.txt release.json; do
+(cd "$WORK/dist" && /usr/bin/shasum -a 256 "$PREFIX.zip" "$PREFIX.dmg" appcast.xml release.json > SHA256SUMS.txt)
+for name in "$PREFIX.zip" "$PREFIX.dmg" appcast.xml SHA256SUMS.txt release.json; do
     cp "$WORK/dist/$name" "$OUTPUT/$name"
 done
 printf 'Verified release assets: %s\n' "$OUTPUT"

@@ -11,6 +11,18 @@ SEMVER = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\Z"
 BUILD_NUMBER = re.compile(r"[1-9][0-9]*\Z", re.ASCII)
 
 
+def completed_test_evidence(report):
+    """Count each XCTest runner's final summary once, including separate test targets."""
+    starts = re.findall(r"^Test Suite 'All tests' started[^\n]*$", report, re.MULTILINE)
+    summaries = re.findall(r"^Test Suite 'All tests' (passed|failed)[^\n]*\n\s*Executed (\d+) tests?, with (\d+) failures?",
+                           report, re.MULTILINE)
+    if not summaries or len(starts) != len(summaries):
+        raise ValueError("Release test output does not prove every XCTest runner completed")
+    if any(state != "passed" or int(tests) == 0 or int(failures) != 0 for state, tests, failures in summaries):
+        raise ValueError("Release test report is empty or contains failures")
+    return sum(int(tests) for _, tests, _ in summaries), 0
+
+
 def validate_versions(version, build_number):
     if not isinstance(version, str) or not SEMVER.fullmatch(version):
         raise ValueError("Release version must be X.Y.Z with no leading zeros")

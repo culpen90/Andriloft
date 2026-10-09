@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from release_metadata import resolve_versions, stamp_versions, validate_app, validate_versions
+from release_metadata import completed_test_evidence, resolve_versions, stamp_versions, validate_app, validate_versions
 
 
 class ReleaseMetadataTests(unittest.TestCase):
@@ -37,6 +37,22 @@ class ReleaseMetadataTests(unittest.TestCase):
         for build in ("0", "01", "-1", "1.0", "1\n", "１", "", 1):
             with self.subTest(build=build), self.assertRaises(ValueError):
                 validate_versions("1.2.3", build)
+
+    def test_separate_xctest_runners_are_counted_once(self):
+        report = ("Test Suite 'All tests' started at now.\n"
+                  "Test Suite 'Updates' passed at now.\n\t Executed 12 tests, with 0 failures\n"
+                  "Test Suite 'All tests' passed at now.\n\t Executed 12 tests, with 0 failures\n"
+                  "Test Suite 'All tests' started at now.\n"
+                  "Test Suite 'Runtime' passed at now.\n\t Executed 23 tests, with 0 failures\n"
+                  "Test Suite 'All tests' passed at now.\n\t Executed 23 tests, with 0 failures\n")
+        self.assertEqual(completed_test_evidence(report), (35, 0))
+
+    def test_failed_or_incomplete_runner_cannot_be_hidden_by_last_passing_runner(self):
+        passing = "Test Suite 'All tests' started at now.\nTest Suite 'All tests' passed at now.\n\t Executed 23 tests, with 0 failures\n"
+        failed = "Test Suite 'All tests' started at now.\nTest Suite 'All tests' failed at now.\n\t Executed 12 tests, with 1 failure\n"
+        for report in (failed + passing, "Test Suite 'All tests' started at now.\n" + passing, ""):
+            with self.subTest(report=report), self.assertRaises(ValueError):
+                completed_test_evidence(report)
 
     def test_defaults_and_environment_overrides(self):
         self.assertEqual(resolve_versions(self.info_path, {}), ("1.2.3", "7"))

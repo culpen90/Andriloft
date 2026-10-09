@@ -1,10 +1,12 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import AndriloftUpdates
 
 private let accent = Color(red: 0.43, green: 0.79, blue: 0.66)
 
 struct LibraryView: View {
     @EnvironmentObject var library: LibraryStore
+    @EnvironmentObject var updater: AppUpdater
     @State private var showRuntime = false
     @State private var diagnostics: String?
 
@@ -54,10 +56,17 @@ struct LibraryView: View {
                 navigationItem("Compatibility", symbol: "cpu", active: showRuntime) { showRuntime = true }
             }
             Spacer()
+            Button { updater.checkForUpdates() } label: {
+                Label("Check for Updates…", systemImage: "arrow.down.circle")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .disabled(!updater.canCheckForUpdates)
+            .help("Choose Install Update to download, install, and restart Andriloft automatically.")
             VStack(alignment: .leading, spacing: 10) {
                 Label("Native compatibility", systemImage: "circle.fill").font(.system(size: 11, weight: .medium)).foregroundStyle(accent)
                 Text("Android APIs.\nA macOS home.").font(.system(size: 19, weight: .semibold)).foregroundStyle(.white.opacity(0.85))
-                Text("Experimental · v0.1").font(.caption).foregroundStyle(.secondary)
+                Text("Experimental · \(updater.version)").font(.caption).foregroundStyle(.secondary)
             }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 14))
         }.padding(22).frame(width: 218).background(Color(red: 0.065, green: 0.083, blue: 0.091))
     }

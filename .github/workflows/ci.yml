@@ -22,6 +22,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Use OpenSSL 3 for update signature tests
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: |
+          OPENSSL_PREFIX="$(brew --prefix openssl@3)"
+          if [[ ! -x "$OPENSSL_PREFIX/bin/openssl" ]]; then brew install openssl@3; fi
+          echo "ANDRILOFT_OPENSSL=$OPENSSL_PREFIX/bin/openssl" >> "$GITHUB_ENV"
       - name: Test release automation
         run: python3 -m unittest discover -s tools/tests -v
       - name: Test Swift runtime

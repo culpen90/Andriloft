@@ -14,6 +14,14 @@
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
+    <key>SUFeedURL</key><string>https://github.com/culpen90/Andriloft/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key><string>J+hfn/W6QRt964GAPBCWBJAzTxDInCV8irQ2SPSBxYg=</string>
+    <key>SURequireSignedFeed</key><true/>
+    <key>SUVerifyUpdateBeforeExtraction</key><true/>
+    <key>SUSignedFeedFailureExpirationInterval</key><integer>0</integer>
+    <key>SUEnableAutomaticChecks</key><false/>
+    <key>SUAutomaticallyUpdate</key><false/>
+    <key>SUShowReleaseNotes</key><true/>
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>

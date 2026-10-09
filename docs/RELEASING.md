@@ -1,6 +1,6 @@
 # Release automation
 
-The **Release** GitHub Actions workflow runs on every push to `main`, including merged pull requests. It publishes newly built universal macOS ZIP and DMG packages only after Swift tests, real APK execution checks, signatures, archive integrity, version metadata, and upload checksums pass. The **CI** workflow also checks pull requests without publishing.
+The **Release** GitHub Actions workflow runs on every push to `main`, including merged pull requests. It publishes newly built universal macOS ZIP and DMG packages and a signed Sparkle update feed only after Swift tests, real APK execution checks, signatures, archive integrity, version metadata, and upload checksums pass. The **CI** workflow also checks pull requests without publishing.
 
 ## Version selection
 
@@ -32,12 +32,21 @@ Each public release includes:
 
 - `Andriloft-<version>-macOS-universal.dmg`
 - `Andriloft-<version>-macOS-universal.zip`
+- `appcast.xml`, the signed in-app update feed pointing to the versioned ZIP.
 - `SHA256SUMS.txt`
-- `release.json`, recording the exact source SHA, bundle version, architectures, signing method, asset hashes, and validation results.
+- `release.json`, recording the exact source SHA, bundle version, architectures, signing method, asset hashes, update signing configuration, and validation results.
 
-The publishing job validates both the manifest and the ZIP's embedded version/provenance, uploads all four assets into a draft, then downloads every uploaded file and compares hashes before publishing. The macOS build also extracts the ZIP and mounts the DMG to check each included app and execute the example APK.
+The publishing job validates the manifest, the ZIP's embedded version/provenance, and the update signatures against the public key in the release source. It uploads all five assets into a draft, then downloads every uploaded file and compares hashes before publishing. The macOS build also extracts the ZIP and mounts the DMG to check each included app and execute the example APK.
 
-The app uses free ad hoc signing and is not notarized. No Apple account, Developer ID certificate, or signing secrets are used. First launch may require **System Settings → Privacy & Security → Open Anyway**, as described in [INSTALL.md](INSTALL.md).
+The app uses free ad hoc signing and is not notarized. No Apple account or Developer ID certificate is required. First launch may require **System Settings → Privacy & Security → Open Anyway**, as described in [INSTALL.md](INSTALL.md).
+
+In-app updates use [Sparkle](https://sparkle-project.org/documentation/), pinned to version `2.10.0`. **Check for Updates…** fetches `https://github.com/culpen90/Andriloft/releases/latest/download/appcast.xml`. Choosing **Install Update** downloads and verifies the ZIP, replaces the installed app, and restarts Andriloft automatically. Open Android windows close; the imported APK library stays in the user's Application Support directory. The feed includes this notice before installation. Install the app in a writable location outside the DMG, as described in the installation guide.
+
+Sparkle's Ed25519 signatures are separate from Apple's code signing and cost nothing. Both the feed and ZIP must authenticate with the public key embedded as `SUPublicEDKey`; signed-feed verification has no expiration fallback. Archive signatures are checked before extraction. The feed identifies the source commit count as the Sparkle version and displays the semantic version to the user. Its archive URL includes the immutable release tag, so a newer Latest release cannot redirect an update already offered to another ZIP.
+
+The build job requires the repository Actions secret `SPARKLE_PRIVATE_KEY`, containing the base64 private key exported by Sparkle's `generate_keys` tool. The release key is stored in the maintainer's macOS Keychain under account `dev.andriloft.mac`; the public half is committed in `Assets/Info.plist`. Keep a secure backup of the private key. Since the app has no Developer ID certificate, replacing a lost key requires users to install a new build manually. Never commit or print the private key. Release tools pass it on standard input, remove it from child environments, and suppress signing-process diagnostics that could echo malformed key input.
+
+`generate_appcast` and `sign_update` come from the same pinned Swift Package Manager binary artifact as the app's framework. The build checks signatures using Sparkle and independently using OpenSSL Ed25519; publication repeats the public-key checks. The macOS workflows explicitly select Homebrew OpenSSL 3 because Apple's system LibreSSL does not provide these verification commands.
 
 The workflow uses the repository's built-in `GITHUB_TOKEN`; only the publishing job receives `contents: write`. Actions must be enabled. Standard GitHub-hosted Actions are free for public repositories; private repositories have plan-specific usage limits. There is no paid bot service or personal access token to configure.
 
@@ -46,7 +55,11 @@ The workflow uses the repository's built-in `GITHUB_TOKEN`; only the publishing 
 ```sh
 python3 -m unittest discover -s tools/tests -v
 # Run from a clean committed source tree, choosing unused output filenames:
-ANDRILOFT_VERSION=0.1.1 ANDRILOFT_BUILD_NUMBER=6 ./tools/build-release.sh
+ANDRILOFT_VERSION=0.1.1 ANDRILOFT_BUILD_NUMBER=6 \
+  SPARKLE_PRIVATE_KEY="$(cat /secure/path/sparkle-private-key)" \
+  ANDRILOFT_OPENSSL="$(brew --prefix openssl@3)/bin/openssl" ./tools/build-release.sh
 ```
 
 `ANDRILOFT_VERSION` must be a stable `X.Y.Z` version without leading zeros. `ANDRILOFT_BUILD_NUMBER` must be a positive integer. Invalid values are rejected before building. Omitting these variables uses `Assets/Info.plist` defaults.
+
+Install OpenSSL 3 with `brew install openssl@3` for local release builds. `ANDRILOFT_OPENSSL` can select its executable. `ANDRILOFT_SPARKLE_TOOLS` can select a `bin` directory from the pinned Sparkle distribution; otherwise the build uses its own Swift Package Manager artifact. A missing signing key, invalid signature, incorrect feed URL, or mismatched public key stops release publication.
