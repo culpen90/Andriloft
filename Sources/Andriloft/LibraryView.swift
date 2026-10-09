@@ -7,24 +7,34 @@ private let accent = Color(red: 0.43, green: 0.79, blue: 0.66)
 struct LibraryView: View {
     @EnvironmentObject var library: LibraryStore
     @EnvironmentObject var updater: AppUpdater
-    @State private var showRuntime = false
+    @State private var destination: Destination = .marketplace
     @State private var diagnostics: String?
+
+    private enum Destination { case marketplace, library, runtime }
 
     var body: some View {
         HStack(spacing: 0) {
             sidebar
             VStack(alignment: .leading, spacing: 0) {
-                header
-                Divider().opacity(0.35)
-                if showRuntime { runtimeInfo }
-                else if library.entries.isEmpty { emptyLibrary }
-                else { appLibrary }
-                Spacer(minLength: 0)
-                statusBar
+                if destination == .marketplace {
+                    MarketplaceView { url in
+                        library.importAPK(url)
+                        if library.error == nil { destination = .library }
+                    }
+                } else {
+                    header
+                    Divider().opacity(0.35)
+                    if destination == .runtime { runtimeInfo }
+                    else if library.entries.isEmpty { emptyLibrary }
+                    else { appLibrary }
+                    Spacer(minLength: 0)
+                    statusBar
+                }
             }
             .background(Color(nsColor: .windowBackgroundColor))
         }
         .preferredColorScheme(.dark)
+        .onChange(of: library.importCount) { _ in destination = .library }
         .alert("Andriloft", isPresented: Binding(get: { library.error != nil }, set: { if !$0 { library.error = nil } })) {
             Button("OK") { library.error = nil }
         } message: { Text(library.error ?? "") }
@@ -52,8 +62,9 @@ struct LibraryView: View {
                 Text("Andriloft").font(.system(size: 21, weight: .bold))
             }.padding(.top, 12)
             VStack(spacing: 8) {
-                navigationItem("My apps", symbol: "square.grid.2x2", active: !showRuntime) { showRuntime = false }
-                navigationItem("Compatibility", symbol: "cpu", active: showRuntime) { showRuntime = true }
+                navigationItem("Marketplace", symbol: "square.grid.2x2", active: destination == .marketplace) { destination = .marketplace }
+                navigationItem("My apps", symbol: "square.stack", active: destination == .library) { destination = .library }
+                navigationItem("Compatibility", symbol: "cpu", active: destination == .runtime) { destination = .runtime }
             }
             Spacer()
             Button { updater.checkForUpdates() } label: {
@@ -81,8 +92,8 @@ struct LibraryView: View {
     private var header: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 5) {
-                Text(showRuntime ? "Compatibility layer" : "Your Android apps").font(.system(size: 27, weight: .bold))
-                Text(showRuntime ? "What runs in this first build" : "A familiar app, a native window.").font(.system(size: 13)).foregroundStyle(.secondary)
+                Text(destination == .runtime ? "Compatibility layer" : "Your Android apps").font(.system(size: 27, weight: .bold))
+                Text(destination == .runtime ? "What runs in this first build" : "A familiar app, a native window.").font(.system(size: 13)).foregroundStyle(.secondary)
             }
             Spacer()
             Button { library.chooseAPK() } label: { Label("Add APK", systemImage: "plus").padding(.horizontal, 7).padding(.vertical, 5) }
@@ -156,7 +167,7 @@ struct LibraryView: View {
                 capability("Supported in v0.1", text: "Basic Java activities · LinearLayout · TextView · Button · EditText · click listeners · string resources · SharedPreferences · toast messages", symbol: "checkmark.circle", color: accent)
                 capability("Still to implement", text: "AndroidX and Compose · XML layouts · JNI and Linux libraries · Google Play services · WebView · network, media and device services", symbol: "wrench.and.screwdriver", color: .orange)
                 Text("Most existing Android apps depend on APIs beyond this first version. Andriloft reports the exact unsupported call when execution reaches it.").font(.callout).foregroundStyle(.secondary).lineSpacing(4)
-                Button("Add the test APK") { library.addExample(); showRuntime = false }.buttonStyle(.bordered)
+                Button("Add the test APK") { library.addExample(); destination = .library }.buttonStyle(.bordered)
             }.padding(30)
         }
     }

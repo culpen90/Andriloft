@@ -2,6 +2,40 @@ import Foundation
 import AppKit
 import AndriloftCore
 import AndriloftRuntime
+import AndriloftMarketplace
+
+let marketplaceArguments = Array(CommandLine.arguments.dropFirst())
+if marketplaceArguments.count == 2, ["--marketplace-search", "--marketplace-variants", "--marketplace-download"].contains(marketplaceArguments[0]) {
+    _ = NSApplication.shared
+    NSApp.setActivationPolicy(.prohibited)
+    Task { @MainActor in
+        do {
+            let catalog = APKMirrorClient()
+            if marketplaceArguments[0] == "--marketplace-search" {
+                let apps = try await catalog.apps(query: marketplaceArguments[1])
+                for app in apps { print("\(app.name) | \(app.developer) | \(app.pageURL.absoluteString)") }
+                try require(!apps.isEmpty, "No live marketplace results")
+            } else {
+                guard let url = URL(string: marketplaceArguments[1]), APKFileDownloader.isTrusted(url) else { throw MarketplaceError.unsafeURL }
+                let app = MarketplaceApp(name: url.lastPathComponent, developer: "", pageURL: url)
+                if marketplaceArguments[0] == "--marketplace-variants" {
+                    let variants = try await catalog.variants(for: app)
+                    for variant in variants { print("\(variant.version) | \(variant.architecture) | \(variant.dpi) | \(variant.isBundle ? "bundle" : "APK") | \(variant.pageURL.absoluteString)") }
+                    try require(!variants.isEmpty, "No live APK variants")
+                } else {
+                    let file = try await MarketplaceDownloadService(catalog: catalog).download(app) { _ in }
+                    print("Saved: \(file.path)")
+                }
+            }
+            exit(0)
+        } catch {
+            fputs("FAIL: \(error.localizedDescription)\n", stderr)
+            exit(1)
+        }
+    }
+    NSApp.run()
+    exit(1)
+}
 
 func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
 func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
@@ -12,6 +46,7 @@ do {
     let arguments = Array(CommandLine.arguments.dropFirst())
     guard arguments.count == 2, ["--inspect", "--self-test", "--expect-unsupported"].contains(arguments[0]) else {
         print("Usage: andriloft-check --inspect|--self-test|--expect-unsupported app.apk")
+        print("       andriloft-check --marketplace-search query | --marketplace-variants app-url | --marketplace-download app-url")
         exit(2)
     }
     let apk = try APKPackage(url: URL(fileURLWithPath: arguments[1]))

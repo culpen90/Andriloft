@@ -20,10 +20,19 @@ final class APKTests: XCTestCase {
     func testZIPRejectsTraversalDuplicateAndTruncation() {
         XCTAssertThrowsError(try APKZIP(data: APKFixture.zip([("../manifest", Data(), false)])))
         XCTAssertThrowsError(try APKZIP(data: APKFixture.zip([("same", Data(), false), ("same", Data(), false)])))
-        XCTAssertThrowsError(try APKZIP(data: APKFixture.zip([("Same", Data(), false), ("same", Data(), false)])))
+        XCTAssertThrowsError(try APKZIP(data: APKFixture.zip([("res/é.png", Data(), false), ("res/e\u{301}.png", Data(), false)])))
         let data = APKFixture.zip([("file", Data([1, 2, 3]), false)])
         XCTAssertThrowsError(try APKZIP(data: Data(data.dropLast())))
         XCTAssertThrowsError(try APKZIP(data: Data(repeating: 0, count: 22)))
+    }
+
+    func testZIPPreservesAndroidCaseSensitiveResourceNames() throws {
+        let archive = try APKZIP(data: APKFixture.zip([
+            ("res/-P.png", Data([1, 2]), false),
+            ("res/-p.png", Data([3, 4]), true)
+        ]))
+        XCTAssertEqual(try archive.read("res/-P.png"), Data([1, 2]))
+        XCTAssertEqual(try archive.read("res/-p.png"), Data([3, 4]))
     }
 
     func testZIPRejectsOverlappingAndOversizedEntries() {
