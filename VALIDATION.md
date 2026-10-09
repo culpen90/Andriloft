@@ -15,7 +15,7 @@ Validated on Apple Silicon (`arm64`), macOS 26.6.2, using Swift 6.4. Intel and o
 
 The original runtime validation app was saved at `~/Applications/Andriloft.app`; the project build script supports `ANDRILOFT_APP_OUTPUT` to choose another location. Packaging strips generated Finder metadata before signing. Tests used a scratch directory outside synced Documents to avoid file-provider metadata on resource bundles.
 
-This validates the defined v0.1 API subset and included APK fixtures. It does not establish compatibility with general third-party Android apps, AndroidX/Compose, or native Android libraries. See README.md for the implemented surface and known limits.
+These initial runtime checks validate the Android API subset and included APK fixtures implemented at that time. They do not establish compatibility with general third-party Android apps, AndroidX/Compose, or native Android libraries. The later update and marketplace checks are recorded below; see README.md for the current implemented surface and known limits.
 
 ## In-app update validation
 
@@ -47,3 +47,15 @@ Observed on 2026-10-09 on this 8 GB Apple Silicon Mac:
 - The production APK reader parsed `com.kevinforeman.nzb360`, version 25.2, minimum SDK 26, and all three DEX files. Valid case-distinct resource names survived import validation; duplicate, canonical Unicode collision, traversal, size, and CRC protections remain covered by tests.
 
 These results validate real cloud selection and a complete APKMirror download. They do not establish that nzb360 or other marketplace apps can execute in Andriloft's limited Android runtime. No downloaded marketplace APK was imported or run automatically. Personal Google account access was exercised using an existing signed-in account; fresh browser sign-in, physical Intel hardware, older macOS versions, quota exhaustion and access challenges were not exercised.
+
+## Version-reference correction validation
+
+Observed on 2026-10-09 on Apple Silicon using Xcode's Swift 6.4. The candidate working tree was based on `v0.3.0` (`26f26f2`); its local package reported `0.3.1 (9)` and accurately recorded `source_dirty: true` before the correction was committed.
+
+- `xcrun swift test --scratch-path /tmp/andriloft-version-validation.yFogVq/swift-tests` passed the runtime, update, and marketplace test suites. All 62 Python release-tool tests passed.
+- `tools/package-app.sh`, with Xcode's toolchain on `PATH` and temporary output/scratch directories, built and signed a fresh Release app. Its plist and `build-info.json` both contained semantic version `0.3.1` and build `9`; package signature checks passed.
+- Both the debug and packaged Release checkers passed the real HelloAndroid APK self-test and the expected unsupported WebView check.
+- The packaged native app visibly displayed `Experimental · 0.3.1` in the sidebar and `What runs in Andriloft 0.3.1` on the compatibility screen. The capability heading read `Supported Android APIs` without the old v0.1 label.
+- Twenty local documentation links resolved, eight shell examples parsed with `bash -n`, the source plist resolved to `0.3.1 9`, and `git diff --check` passed.
+
+The separate Swift 6.3 installation on the default shell path could not compile against this Mac's newer SDK; packaging passed with Xcode's Swift 6.4. These checks validate a local development candidate, not publication of v0.3.1, a new Android compatibility feature, or a full signed universal distribution build.
