@@ -1,0 +1,80 @@
+# Andriloft
+
+An experimental Android compatibility layer for macOS, inspired by Wine's API translation approach. Andriloft opens an APK, executes its managed DEX bytecode, and translates supported Android framework calls into native AppKit controls. It does not boot Android, use an emulator, or require an Android SDK to run.
+
+**This is a working v0.1 prototype, not general Android app compatibility.** The included, ordinary Android APK runs its activity code, Java button callbacks, editable input, and saved preferences on macOS. Most existing apps require many Android APIs that are not implemented yet.
+
+## Run
+
+Requires macOS 13 or newer. Build with Xcode Command Line Tools and Swift 5.9 or newer:
+
+```sh
+./tools/package-app.sh
+open build/Andriloft.app
+```
+
+Click **Try the example**, then **Run app**. The example's counter and greeting execute the APK's compiled Java code. You can also add APKs with **Add APK**, drag them into the window, or use Finder's Open With menu. Andriloft keeps a copy in `~/Library/Application Support/Andriloft/`.
+
+The package script includes a precompiled demo APK; it needs no Android tools. The resulting app is signed locally with an ad hoc signature, without Developer ID notarization.
+
+## What works
+
+- Ordinary ZIP APKs, compiled Android manifests, launcher activities and activity aliases, default string resources, and multiple DEX files.
+- DEX 035–040 parsing, a bounded register interpreter, application and activity class initialization, constructors, lifecycle callbacks, virtual method dispatch, fields, branches, arrays, and basic numeric operations.
+- Programmatic `LinearLayout`, `TextView`, `Button`, and `EditText` mapped to real Mac controls; text, font size, colors, click handlers, and basic layout.
+- A small Java surface including strings, StringBuilder, integer conversion, and a few math operations.
+- Package-isolated `SharedPreferences`, `Log`, and Toast output in the library status bar.
+- Import validation and specific unsupported API/opcode errors. Guest callbacks stop after an execution error.
+
+Native layouts adapt Android views to Mac controls. Rendering is approximate: density, margins, text-control padding, layout weight, visibility variants, and many layout properties do not yet reproduce Android behavior.
+
+## Current limits
+
+AndroidX, Compose, XML layout inflation, Google Play services, WebView, Binder/services, network/media/device APIs, native JNI/Linux `.so` libraries, split APK installation, and Android exception handling are not implemented. Permissions listed in an APK do not grant host access. APK signing certificates are not verified by the importer. Files are interpreted in the app's own process; this prototype is not a security sandbox for hostile apps.
+
+The runtime never silently launches an Android emulator. Unsupported calls report the method that could not run. Native libraries in an APK are listed as metadata and are never loaded.
+
+## Build and validate
+
+```sh
+swift test
+swift run andriloft-check --inspect Tests/AndriloftTests/Fixtures/HelloAndroid.apk
+swift run andriloft-check --self-test Tests/AndriloftTests/Fixtures/HelloAndroid.apk
+swift run andriloft-check --expect-unsupported Tests/AndriloftTests/Fixtures/UnsupportedAndroid.apk
+./tools/package-app.sh
+```
+
+The integration checks execute the actual APK: `Activity.onCreate` creates AppKit controls, native button clicks invoke Java listeners, Java code reads the native input, and saved state survives activity recreation. Tests also cover malformed APK/DEX files, resource lookup, interpreter limits, method dispatch, and unsupported APIs.
+
+If a synced Documents folder adds Finder metadata to test bundles and codesigning fails, use `swift test --scratch-path /tmp/andriloft-tests` to build the tests outside that folder.
+
+You can also package the app outside a synced folder with `ANDRILOFT_APP_OUTPUT="$HOME/Applications/Andriloft.app" ./tools/package-app.sh`.
+
+To rebuild the Java example and fixtures, install an Android SDK containing a stable platform, build-tools, and JDK 17 or newer:
+
+```sh
+ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" ./tools/build-example.sh --update-fixtures
+./tools/package-app.sh --build-example
+```
+
+Android tools are used only to compile test APKs. There is no Android runtime dependency in the macOS app.
+
+## Architecture
+
+```text
+APKPackage       bounded ZIP + binary manifest + resource string reader
+   ↓
+DexFile          DEX definitions, method code and constants
+   ↓
+DexVM            interpreter for supported application bytecode
+   ↓
+AndroidHost      Android/Java API shims, saved state, AppKit controls
+   ↓
+NativeAndroidSession  native window and guest lifecycle
+```
+
+`Sources/AndriloftCore` holds platform-independent parsing and execution. `Sources/AndriloftRuntime` holds the Mac framework bridge. `Sources/Andriloft` is the SwiftUI library, and `Sources/AndriloftCheck` provides repeatable APK execution checks. `Examples/HelloAndroid` contains Java source for the test app.
+
+The bytecode reader follows the AOSP [DEX file format](https://source.android.com/docs/core/runtime/dex-format) and [Dalvik instruction format](https://source.android.com/docs/core/runtime/dalvik-bytecode). Framework behavior is developed against the [Android Activity API](https://developer.android.com/reference/android/app/Activity).
+
+Next compatibility work should add regression APKs for each new API, improve resources and XML views, implement Java exceptions and library behavior, and then expand framework services. JNI and Linux ABI translation require a separate substantial implementation.
