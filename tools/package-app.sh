@@ -65,7 +65,12 @@ codesign --force --sign - "$APP"
 codesign --verify --deep --strict "$APP"
 codesign --verify --strict --all-architectures "$APP/Contents/MacOS/andriloft-check"
 if [[ "${ANDRILOFT_UNIVERSAL:-0}" == "1" ]]; then
-    lipo "$APP/Contents/MacOS/Andriloft" -verify_arch arm64 x86_64
-    lipo "$APP/Contents/MacOS/andriloft-check" -verify_arch arm64 x86_64
+    for executable in Andriloft andriloft-check; do
+        ARCHS="$(lipo -archs "$APP/Contents/MacOS/$executable")"
+        if [[ "$ARCHS" != "arm64 x86_64" && "$ARCHS" != "x86_64 arm64" ]]; then
+            printf '%s is not universal: %s\n' "$executable" "$ARCHS" >&2
+            exit 1
+        fi
+    done
 fi
 printf 'Packaged %s\n' "$APP"
