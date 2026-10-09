@@ -93,7 +93,7 @@ struct LibraryView: View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 5) {
                 Text(destination == .runtime ? "Compatibility layer" : "Your Android apps").font(.system(size: 27, weight: .bold))
-                Text(destination == .runtime ? "What runs in this first build" : "A familiar app, a native window.").font(.system(size: 13)).foregroundStyle(.secondary)
+                Text(destination == .runtime ? "What runs in Andriloft \(updater.version)" : "A familiar app, a native window.").font(.system(size: 13)).foregroundStyle(.secondary)
             }
             Spacer()
             Button { library.chooseAPK() } label: { Label("Add APK", systemImage: "plus").padding(.horizontal, 7).padding(.vertical, 5) }
@@ -164,9 +164,9 @@ struct LibraryView: View {
                     .padding(20).frame(maxWidth: .infinity, alignment: .leading).background(accent.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
                 Text("Runs directly on macOS").font(.title2.bold())
                 Text("Andriloft executes a supported subset of Android bytecode in its own interpreter. Activity startup, view calls, and app callbacks cross into native macOS APIs. Your APKs stay in your local library.").foregroundStyle(.secondary).lineSpacing(4)
-                capability("Supported in v0.1", text: "Basic Java activities · LinearLayout · TextView · Button · EditText · click listeners · string resources · SharedPreferences · toast messages", symbol: "checkmark.circle", color: accent)
+                capability("Supported Android APIs", text: "Basic Java activities · LinearLayout · TextView · Button · EditText · click listeners · string resources · SharedPreferences · toast messages", symbol: "checkmark.circle", color: accent)
                 capability("Still to implement", text: "AndroidX and Compose · XML layouts · JNI and Linux libraries · Google Play services · WebView · network, media and device services", symbol: "wrench.and.screwdriver", color: .orange)
-                Text("Most existing Android apps depend on APIs beyond this first version. Andriloft reports the exact unsupported call when execution reaches it.").font(.callout).foregroundStyle(.secondary).lineSpacing(4)
+                Text("Most existing Android apps depend on APIs beyond the currently supported subset. Andriloft reports the exact unsupported call when execution reaches it.").font(.callout).foregroundStyle(.secondary).lineSpacing(4)
                 Button("Add the test APK") { library.addExample(); destination = .library }.buttonStyle(.bordered)
             }.padding(30)
         }

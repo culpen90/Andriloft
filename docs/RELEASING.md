@@ -6,17 +6,19 @@ The **Release** GitHub Actions workflow runs on every push to `main`, including 
 
 The planner uses the highest published stable `vX.Y.Z` release and every commit since its tag. Drafts, prereleases, and other tag formats are excluded. The highest applicable increment wins:
 
-| Commit message | Increment | Example starting at 0.1.0 |
+| Commit message | Increment | Example starting at 0.3.0 |
 | --- | --- | --- |
-| `fix: correct APK import` | Patch | 0.1.1 |
-| `feat: support another Android API` | Minor | 0.2.0 |
+| `fix: correct APK import` | Patch | 0.3.1 |
+| `feat: support another Android API` | Minor | 0.4.0 |
 | `feat!: change the host API` | Major | 1.0.0 |
 | A Conventional Commit with a `BREAKING CHANGE:` footer | Major | 1.0.0 |
-| Other commits, including docs and build changes | Patch | 0.1.1 |
+| Other commits, including docs and build changes | Patch | 0.3.1 |
 
 Use Conventional Commit titles when squash merging. A first release with no published stable version starts at `0.1.0`. Changes during the `0.x` phase follow the same explicit major/minor/patch rules.
 
 The packaged app's `CFBundleShortVersionString`, `build-info.json`, `release.json`, and filenames contain the planned semantic version. `CFBundleVersion` is the source commit count, which increases as `main` gains commits. Source history must descend from the previous release; rewriting release history is rejected. The source plist supplies defaults for local development builds; the workflow stamps a copy inside the app without modifying source or creating a bot commit.
+
+The bot also generates the signed appcast and GitHub release notes from commit subjects. It does **not** rewrite source metadata, UI copy, README content, authored release notes, or validation records. Contributors must update every affected maintained version reference and change description outside that generated output, using the planned version and actual Conventional Commit changes. See [CONTRIBUTING.md](../CONTRIBUTING.md) for the required audit and pull request checklist.
 
 ## Manual runs and retries
 
@@ -55,7 +57,7 @@ The workflow uses the repository's built-in `GITHUB_TOKEN`; only the publishing 
 ```sh
 python3 -m unittest discover -s tools/tests -v
 # Run from a clean committed source tree, choosing unused output filenames:
-ANDRILOFT_VERSION=0.1.1 ANDRILOFT_BUILD_NUMBER=6 \
+ANDRILOFT_VERSION=0.3.1 ANDRILOFT_BUILD_NUMBER="$(git rev-list --count HEAD)" \
   SPARKLE_PRIVATE_KEY="$(cat /secure/path/sparkle-private-key)" \
   ANDRILOFT_OPENSSL="$(brew --prefix openssl@3)/bin/openssl" ./tools/build-release.sh
 ```

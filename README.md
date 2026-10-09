@@ -2,7 +2,7 @@
 
 An experimental Android compatibility layer for macOS, inspired by Wine's API translation approach. Andriloft opens an APK, executes its managed DEX bytecode, and translates supported Android framework calls into native AppKit controls. It does not boot Android, use an emulator, or require an Android SDK to run.
 
-**This is a working v0.1 prototype, not general Android app compatibility.** The included, ordinary Android APK runs its activity code, Java button callbacks, editable input, and saved preferences on macOS. Most existing apps require many Android APIs that are not implemented yet.
+**Andriloft is an experimental prototype with limited Android app compatibility.** The included, ordinary Android APK runs its activity code, Java button callbacks, editable input, and saved preferences on macOS. Most existing apps require many Android APIs that are not implemented yet.
 
 ## Download and install
 
@@ -13,7 +13,7 @@ Download the ready-to-run **[latest Andriloft release](https://github.com/culpen
 
 No Android SDK or developer tools are needed to run the downloaded app. Open Andriloft, click **Try the example**, then **Run app**.
 
-The app uses an ad hoc code signature and is not notarized or signed with an Apple Developer ID. If macOS blocks the first launch, follow the per-app **System Settings → Privacy & Security → Open Anyway** steps in the [installation guide](docs/INSTALL.md). This distribution requires no paid Apple Developer account. See the [release notes](docs/releases/v0.1.0.md) for compatibility limits.
+The app uses an ad hoc code signature and is not notarized or signed with an Apple Developer ID. If macOS blocks the first launch, follow the per-app **System Settings → Privacy & Security → Open Anyway** steps in the [installation guide](docs/INSTALL.md). This distribution requires no paid Apple Developer account. See the [latest published release notes](https://github.com/culpen90/Andriloft/releases/latest) and [current compatibility limits](#current-limits).
 
 Choose **Check for Updates…** in Andriloft's sidebar or app menu, then **Install Update** when a new version is available. Andriloft verifies, downloads, installs, and restarts automatically, keeping your imported APK library and saved preferences. Open Android app windows close for the restart. Releases predating the updater need one manual installation of an updater-enabled build.
 
@@ -95,6 +95,8 @@ This builds fresh universal Release executables, runs tests and APK execution ch
 Every push or merge to `main` automatically publishes a new GitHub release after tests and packaging checks pass. The bot examines all commits since the last published release: `feat:` increments minor, `!` or a `BREAKING CHANGE:` footer increments major, and other changes increment patch. Multiple changes use the largest increment.
 
 Each version gets newly built universal ZIP and DMG downloads, a signed Sparkle appcast, matching app version metadata, an increasing build number, checksums, and source provenance. Releases remain drafts until all uploaded files have been downloaded again and verified. The bot uses GitHub's built-in token, free ad hoc macOS signing, and the repository's `SPARKLE_PRIVATE_KEY` secret to authenticate updates. No Apple Developer account or certificate is needed. See [the release guide](docs/RELEASING.md) for manual increments and failure recovery.
+
+Contributors must also update source version defaults, current documentation, release notes, and compatibility information that the bot does not maintain. Follow the [contribution guide](CONTRIBUTING.md) before submitting a change. The [0.3.1 source release notes](docs/releases/v0.3.1.md) describe this version-reference correction; the download link above always resolves to the latest published release.
 
 ## Architecture
 
