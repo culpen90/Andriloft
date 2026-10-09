@@ -79,9 +79,18 @@ jobs:
         with:
           ref: ${{ needs.plan.outputs.source_sha }}
           persist-credentials: false
+      - name: Use OpenSSL 3 for update signatures
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: |
+          OPENSSL_PREFIX="$(brew --prefix openssl@3)"
+          if [[ ! -x "$OPENSSL_PREFIX/bin/openssl" ]]; then brew install openssl@3; fi
+          echo "ANDRILOFT_OPENSSL=$OPENSSL_PREFIX/bin/openssl" >> "$GITHUB_ENV"
       - name: Test release metadata
         run: python3 -m unittest discover -s tools/tests -v
       - name: Build and validate new universal app
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: ./tools/build-release.sh
       - name: Save verified release assets
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

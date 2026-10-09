@@ -28,7 +28,8 @@ struct LibraryEntry: Codable, Identifiable {
     var selected: LibraryEntry? { entries.first { $0.id == selectedID } }
 
     init() {
-        directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Andriloft", isDirectory: true)
+        let applicationName = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Andriloft"
+        directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent(applicationName, isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let index = directory.appendingPathComponent("library.json")

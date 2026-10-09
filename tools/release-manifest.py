@@ -8,7 +8,8 @@ import pathlib
 import re
 import subprocess
 
-from release_metadata import validate_app
+from release_metadata import completed_test_evidence, validate_app
+from sparkle_updates import validate_appcast
 
 parser = argparse.ArgumentParser(description=__doc__)
 for name in ("root", "app", "destination", "test_report"):
@@ -53,12 +54,12 @@ prefix = f"Andriloft-{args.version}-macOS-universal"
 if {asset["name"] for asset in assets} != {f"{prefix}.zip", f"{prefix}.dmg"}:
     raise SystemExit("Release asset filenames do not match the embedded version")
 results = test_report.read_text()
-summaries = re.findall(r"Executed (\d+) tests?, with (\d+) failures?", results)
-if not summaries or "Test Suite 'All tests' passed" not in results:
-    raise SystemExit("Release test output does not prove a completed passing test suite")
-tests, failures = map(int, summaries[-1])
-if tests == 0 or failures:
-    raise SystemExit("Release test report is empty or contains failures")
+try:
+    tests, failures = completed_test_evidence(results)
+except ValueError as error:
+    raise SystemExit(str(error))
+updater = validate_appcast(destination / "appcast.xml", destination / f"{prefix}.zip", info,
+                           args.version, args.build_number)
 payload = {
     "schema_version": 1,
     "version": build["version"], "tag": "v" + build["version"],
@@ -75,7 +76,9 @@ payload = {
                    "extracted_zip_signature": True, "extracted_zip_smoke": True,
                    "extracted_zip_version_provenance": True,
                    "dmg_image_integrity": True, "mounted_dmg_signature": True,
-                   "mounted_dmg_smoke": True, "mounted_dmg_version_provenance": True},
+                   "mounted_dmg_smoke": True, "mounted_dmg_version_provenance": True,
+                   "sparkle_archive_signature": True, "sparkle_feed_signature": True},
+    "updater": updater,
     "assets": assets,
 }
 (destination / "release.json").write_text(json.dumps(payload, indent=2) + "\n")

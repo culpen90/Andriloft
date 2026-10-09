@@ -11,6 +11,11 @@ import subprocess
 import tempfile
 import zipfile
 
+from sparkle_updates import REPOSITORY, validate_appcast, validate_framework_info, validate_updater_info
+
+
+SOURCE_INFO = Path(__file__).resolve().parents[1] / "Assets/Info.plist"
+
 
 def digest(filename):
     result = hashlib.sha256()
@@ -20,7 +25,7 @@ def digest(filename):
     return result.hexdigest()
 
 
-def validate_assets(directory, plan):
+def validate_assets(directory, plan, repository=REPOSITORY):
     version = plan["version"]
     if not re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", version):
         raise ValueError("Invalid planned version")
@@ -30,9 +35,9 @@ def validate_assets(directory, plan):
         raise ValueError("Invalid planned build or skipped release")
     prefix = f"Andriloft-{version}-macOS-universal"
     archive_names = {prefix + ".zip", prefix + ".dmg"}
-    expected_names = archive_names | {"release.json", "SHA256SUMS.txt"}
+    expected_names = archive_names | {"appcast.xml", "release.json", "SHA256SUMS.txt"}
     if {item.name for item in directory.iterdir()} != expected_names:
-        raise ValueError("Expected exactly the versioned ZIP, DMG, manifest, and checksums")
+        raise ValueError("Expected exactly the versioned ZIP, DMG, signed appcast, manifest, and checksums")
     if any(not (directory / name).is_file() or (directory / name).is_symlink() for name in expected_names):
         raise ValueError("Release assets must be regular files")
     checksums = {}
@@ -41,7 +46,7 @@ def validate_assets(directory, plan):
         if not match or match[2] in checksums:
             raise ValueError("Invalid or duplicate checksum line")
         checksums[match[2]] = match[1]
-    if set(checksums) != archive_names | {"release.json"}:
+    if set(checksums) != archive_names | {"appcast.xml", "release.json"}:
         raise ValueError("Checksums do not cover the complete release")
     if any(digest(directory / name) != checksum for name, checksum in checksums.items()):
         raise ValueError("Release checksum mismatch")
@@ -56,7 +61,8 @@ def validate_assets(directory, plan):
     if not isinstance(validation.get("tests"), int) or validation["tests"] <= 0 or validation.get("failures") != 0:
         raise ValueError("Release manifest has no passing test evidence")
     for check in ("extracted_zip_signature", "extracted_zip_smoke", "extracted_zip_version_provenance",
-                  "dmg_image_integrity", "mounted_dmg_signature", "mounted_dmg_smoke", "mounted_dmg_version_provenance"):
+                  "dmg_image_integrity", "mounted_dmg_signature", "mounted_dmg_smoke", "mounted_dmg_version_provenance",
+                  "sparkle_archive_signature", "sparkle_feed_signature"):
         if validation.get(check) is not True:
             raise ValueError(f"Release validation missing: {check}")
     assets = manifest.get("assets", [])
@@ -69,16 +75,26 @@ def validate_assets(directory, plan):
     with zipfile.ZipFile(directory / (prefix + ".zip")) as archive:
         info_name = "Andriloft.app/Contents/Info.plist"
         build_name = "Andriloft.app/Contents/Resources/build-info.json"
-        if any(archive.namelist().count(name) != 1 for name in (info_name, build_name)):
+        framework_info_name = "Andriloft.app/Contents/Frameworks/Sparkle.framework/Versions/B/Resources/Info.plist"
+        if any(archive.namelist().count(name) != 1 for name in (info_name, build_name, framework_info_name)):
             raise ValueError("ZIP app version/provenance is missing or duplicated")
         info = plistlib.loads(archive.read(info_name))
         build = json.loads(archive.read(build_name))
+        validate_framework_info(plistlib.loads(archive.read(framework_info_name)))
         if info.get("CFBundleShortVersionString") != version or info.get("CFBundleVersion") != str(plan["build"]):
             raise ValueError("ZIP embedded app version/build mismatch")
         expected_build = {"version": version, "build": str(plan["build"]), "source_sha": plan["source_sha"],
                           "source_dirty": False, "configuration": "release", "signing": "ad-hoc", "notarized": False}
         if any(build.get(key) != value for key, value in expected_build.items()):
             raise ValueError("ZIP embedded app provenance mismatch")
+        source_info = plistlib.loads(SOURCE_INFO.read_bytes())
+        trusted_feed, trusted_key = validate_updater_info(source_info, repository)
+        if info.get("SUFeedURL") != trusted_feed or info.get("SUPublicEDKey") != trusted_key:
+            raise ValueError("ZIP Sparkle configuration does not match the trusted release source")
+        updater = validate_appcast(directory / "appcast.xml", directory / (prefix + ".zip"), info,
+                                   version, plan["build"], repository)
+        if manifest.get("updater") != updater:
+            raise ValueError("Release manifest does not match the verified Sparkle updater")
     return sorted(expected_names)
 
 
@@ -141,7 +157,7 @@ class GitHub:
 
 
 def publish(github, plan, directory, notes):
-    names = validate_assets(directory, plan)
+    names = validate_assets(directory, plan, github.repository)
     tag, source_sha = plan["tag"], plan["source_sha"]
     releases = github.releases()
     matches = [release for release in releases if release["tag_name"] == tag]
