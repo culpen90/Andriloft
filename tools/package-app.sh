@@ -65,7 +65,7 @@ codesign --force --sign - "$APP"
 codesign --verify --deep --strict "$APP"
 codesign --verify --strict --all-architectures "$APP/Contents/MacOS/andriloft-check"
 if [[ "${ANDRILOFT_UNIVERSAL:-0}" == "1" ]]; then
-    lipo -verify_arch arm64 x86_64 "$APP/Contents/MacOS/Andriloft"
-    lipo -verify_arch arm64 x86_64 "$APP/Contents/MacOS/andriloft-check"
+    lipo "$APP/Contents/MacOS/Andriloft" -verify_arch arm64 x86_64
+    lipo "$APP/Contents/MacOS/andriloft-check" -verify_arch arm64 x86_64
 fi
 printf 'Packaged %s\n' "$APP"
