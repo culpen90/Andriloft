@@ -93,10 +93,20 @@ final class APKMirrorClientTests: XCTestCase {
 
     func testRecentReleasesHaveSeparateStandaloneQuotasAndCache() async throws {
         let release2 = URL(string: "https://www.apkmirror.com/apk/mozilla/firefox/firefox-156-release/")!
-        let appPage = "<main id='primary'>" + [releaseURL, release2].map { "<h5 class='appRowTitle'><a href='\($0.absoluteString)'>Firefox</a></h5>" }.joined() + "</main>"
+        let appLinks = [releaseURL, release2].map {
+            "<h5 class='appRowTitle'><a href='\($0.absoluteString)'>Firefox</a></h5>"
+        }
+        let appPage = "<main id='primary'>" + appLinks.joined() + "</main>"
         var pages: [URL: String] = [appURL: appPage]
         for (release, version) in [(releaseURL, "157"), (release2, "156")] {
-            pages[release] = "<main id='primary'>" + (1...5).map { row(version: version, suffix: String($0), architecture: $0 == 5 ? "universal" : "arm64-v8a", android: "Android 8.0+", dpi: $0 == 5 ? "nodpi" : "\($0 * 80)dpi", format: "APK", release: release) }.joined() + "</main>"
+            var variantRows: [String] = []
+            for index in 1...5 {
+                let architecture = index == 5 ? "universal" : "arm64-v8a"
+                let dpi = index == 5 ? "nodpi" : "\(index * 80)dpi"
+                variantRows.append(row(version: version, suffix: String(index), architecture: architecture,
+                                       android: "Android 8.0+", dpi: dpi, format: "APK", release: release))
+            }
+            pages[release] = "<main id='primary'>" + variantRows.joined() + "</main>"
             for index in 1...5 {
                 pages[URL(string: "file-\(index)-android-apk-download/", relativeTo: release)!.absoluteURL] = detail(package: "org.mozilla.firefox", sha: String(repeating: "b", count: 64))
             }
