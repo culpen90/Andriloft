@@ -1,17 +1,17 @@
 # Install Andriloft
 
-Andriloft requires **macOS 13 or newer**. The v0.1.0 universal download contains executables for **Apple Silicon (`arm64`)** and **Intel (`x86_64`)**. Native GUI validation was performed on Apple Silicon; physical Intel Macs and older supported macOS versions have not been exercised. The release manifest records execution checks for each tested architecture.
+Andriloft requires **macOS 13 or newer**. Each universal download contains executables for **Apple Silicon (`arm64`)** and **Intel (`x86_64`)**. Native GUI validation was performed on Apple Silicon; physical Intel Macs and older supported macOS versions have not been exercised. The release manifest records execution checks for each tested architecture.
 
 The download is a production Swift Release build of the macOS application, with the example APK included. You do not need Xcode, Swift, Java, an Android SDK, or an Apple Developer account to run it. The compatibility layer itself is experimental: most existing third-party Android apps are not supported.
 
 ## Download
 
-Get the files from the [official v0.1.0 GitHub release](https://github.com/culpen90/Andriloft/releases/tag/v0.1.0):
+Get the files from the [latest official GitHub release](https://github.com/culpen90/Andriloft/releases/latest). Replace `<version>` below with that release's version:
 
 | File | Purpose |
 | --- | --- |
-| `Andriloft-0.1.0-macOS-universal.dmg` | Drag-and-drop installer. |
-| `Andriloft-0.1.0-macOS-universal.zip` | The same app in a ZIP archive. |
+| `Andriloft-<version>-macOS-universal.dmg` | Drag-and-drop installer. |
+| `Andriloft-<version>-macOS-universal.zip` | The same app in a ZIP archive. |
 | `SHA256SUMS.txt` | SHA-256 checksums for the release files. |
 | `release.json` | Build, version, and signing metadata. |
 
@@ -42,7 +42,7 @@ Click **Try the example**, then **Run app** to launch the included Android examp
 
 To import another APK, click **Add APK**, drop an APK into Andriloft's window, or use Finder's **Open With → Andriloft**. Andriloft keeps imported copies under `~/Library/Application Support/Andriloft/` and saves guest preferences in separate macOS preference stores for each Android package.
 
-Use APKs from sources you trust. APK code runs inside Andriloft's process; the compatibility layer is not a sandbox for hostile APKs, and APK signing certificates are not verified. AndroidX, Compose, native Android libraries/JNI, Google Play services, and many Android APIs are not implemented. Unsupported calls produce an error instead of starting Android. See the [release notes](https://github.com/culpen90/Andriloft/blob/v0.1.0/docs/releases/v0.1.0.md) and [README](https://github.com/culpen90/Andriloft/blob/v0.1.0/README.md) for the implemented subset.
+Use APKs from sources you trust. APK code runs inside Andriloft's process; the compatibility layer is not a sandbox for hostile APKs, and APK signing certificates are not verified. AndroidX, Compose, native Android libraries/JNI, Google Play services, and many Android APIs are not implemented. Unsupported calls produce an error instead of starting Android. See the [release notes](https://github.com/culpen90/Andriloft/releases/latest) and [README](https://github.com/culpen90/Andriloft/blob/main/README.md) for the implemented subset.
 
 ## Remove the app
 

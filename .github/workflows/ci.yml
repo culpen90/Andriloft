@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test release automation
+        run: python3 -m unittest discover -s tools/tests -v
+      - name: Test Swift runtime
+        run: swift test
+      - name: Execute real Android fixtures
+        run: |
+          swift run andriloft-check --self-test Tests/AndriloftTests/Fixtures/HelloAndroid.apk
+          swift run andriloft-check --expect-unsupported Tests/AndriloftTests/Fixtures/UnsupportedAndroid.apk

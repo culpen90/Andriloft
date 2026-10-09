@@ -6,10 +6,10 @@ An experimental Android compatibility layer for macOS, inspired by Wine's API tr
 
 ## Download and install
 
-Download the ready-to-run **[Andriloft 0.1.0 release](https://github.com/culpen90/Andriloft/releases/tag/v0.1.0)** for macOS 13 or newer. The universal app includes Apple Silicon and Intel executables; runtime validation has been performed on Apple Silicon.
+Download the ready-to-run **[latest Andriloft release](https://github.com/culpen90/Andriloft/releases/latest)** for macOS 13 or newer. The universal app includes Apple Silicon and Intel executables; runtime validation has been performed on Apple Silicon.
 
-- **[DMG installer](https://github.com/culpen90/Andriloft/releases/download/v0.1.0/Andriloft-0.1.0-macOS-universal.dmg):** open it and drag **Andriloft.app** into **Applications**.
-- **[ZIP archive](https://github.com/culpen90/Andriloft/releases/download/v0.1.0/Andriloft-0.1.0-macOS-universal.zip):** extract it and move **Andriloft.app** into **Applications**.
+- **DMG installer** (`Andriloft-<version>-macOS-universal.dmg`): open it and drag **Andriloft.app** into **Applications**.
+- **ZIP archive** (`Andriloft-<version>-macOS-universal.zip`): extract it and move **Andriloft.app** into **Applications**.
 
 No Android SDK or developer tools are needed to run the downloaded app. Open Andriloft, click **Try the example**, then **Run app**.
 
@@ -77,6 +77,12 @@ To build distribution ZIP and DMG files from a clean committed source tree:
 ```
 
 This builds fresh universal Release executables, runs tests and APK execution checks, verifies the extracted ZIP and mounted DMG, and writes checksums and source provenance under `build/release/`. On Apple Silicon with Rosetta already installed, set `ANDRILOFT_VERIFY_ROSETTA=1` to also execute the Intel checker. Signing is ad hoc; no Apple account or signing credentials are required.
+
+## Automatic releases
+
+Every push or merge to `main` automatically publishes a new GitHub release after tests and packaging checks pass. The bot examines all commits since the last published release: `feat:` increments minor, `!` or a `BREAKING CHANGE:` footer increments major, and other changes increment patch. Multiple changes use the largest increment.
+
+Each version gets newly built universal ZIP and DMG downloads, matching app version metadata, an increasing build number, checksums, and source provenance. Releases remain drafts until all uploaded files have been downloaded again and verified. The bot uses GitHub's built-in token and free ad hoc signing; no Apple Developer account, certificates, or extra secrets are needed. See [the release guide](docs/RELEASING.md) for manual increments and failure recovery.
 
 ## Architecture
 

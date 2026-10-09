@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+VERSIONS="$(python3 "$ROOT/tools/check-release-version.py" resolve "$ROOT/Assets/Info.plist")"
+read -r VERSION BUILD_NUMBER <<< "$VERSIONS"
 APP="${ANDRILOFT_APP_OUTPUT:-$ROOT/build/Andriloft.app}"
 DEMO="${ANDRILOFT_DEMO_APK:-$ROOT/Examples/HelloAndroid/build/HelloAndroid.apk}"
 if [[ ! -f "$DEMO" ]]; then
@@ -35,6 +37,7 @@ swift build "${BUILD_FLAGS[@]}"
 BIN_DIR="$(swift build "${BUILD_FLAGS[@]}" --show-bin-path)"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$ROOT/Assets/Info.plist" "$APP/Contents/Info.plist"
+python3 "$ROOT/tools/check-release-version.py" stamp "$APP/Contents/Info.plist" "$VERSION" "$BUILD_NUMBER"
 cp "$BIN_DIR/Andriloft" "$APP/Contents/MacOS/Andriloft"
 cp "$BIN_DIR/andriloft-check" "$APP/Contents/MacOS/andriloft-check"
 chmod +x "$APP/Contents/MacOS/Andriloft" "$APP/Contents/MacOS/andriloft-check"
