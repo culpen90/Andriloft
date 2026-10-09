@@ -4,6 +4,17 @@ An experimental Android compatibility layer for macOS, inspired by Wine's API tr
 
 **This is a working v0.1 prototype, not general Android app compatibility.** The included, ordinary Android APK runs its activity code, Java button callbacks, editable input, and saved preferences on macOS. Most existing apps require many Android APIs that are not implemented yet.
 
+## Download and install
+
+Download the ready-to-run **[Andriloft 0.1.0 release](https://github.com/culpen90/Andriloft/releases/tag/v0.1.0)** for macOS 13 or newer. The universal app includes Apple Silicon and Intel executables; runtime validation has been performed on Apple Silicon.
+
+- **[DMG installer](https://github.com/culpen90/Andriloft/releases/download/v0.1.0/Andriloft-0.1.0-macOS-universal.dmg):** open it and drag **Andriloft.app** into **Applications**.
+- **[ZIP archive](https://github.com/culpen90/Andriloft/releases/download/v0.1.0/Andriloft-0.1.0-macOS-universal.zip):** extract it and move **Andriloft.app** into **Applications**.
+
+No Android SDK or developer tools are needed to run the downloaded app. Open Andriloft, click **Try the example**, then **Run app**.
+
+The app uses an ad hoc code signature and is not notarized or signed with an Apple Developer ID. If macOS blocks the first launch, follow the per-app **System Settings → Privacy & Security → Open Anyway** steps in the [installation guide](docs/INSTALL.md). This distribution requires no paid Apple Developer account. See the [release notes](docs/releases/v0.1.0.md) for compatibility limits.
+
 ## Run
 
 Requires macOS 13 or newer. Build with Xcode Command Line Tools and Swift 5.9 or newer:
@@ -58,6 +69,14 @@ ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" ./tools/build-example.sh --update-f
 ```
 
 Android tools are used only to compile test APKs. There is no Android runtime dependency in the macOS app.
+
+To build distribution ZIP and DMG files from a clean committed source tree:
+
+```sh
+./tools/build-release.sh
+```
+
+This builds fresh universal Release executables, runs tests and APK execution checks, verifies the extracted ZIP and mounted DMG, and writes checksums and source provenance under `build/release/`. On Apple Silicon with Rosetta already installed, set `ANDRILOFT_VERIFY_ROSETTA=1` to also execute the Intel checker. Signing is ad hoc; no Apple account or signing credentials are required.
 
 ## Architecture
 

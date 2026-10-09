@@ -4,3 +4,4 @@ build/
 *.xcuserstate
 .swiftpm/
 Examples/HelloAndroid/build/
+__pycache__/

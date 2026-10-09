@@ -3,8 +3,12 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="${ANDRILOFT_APP_OUTPUT:-$ROOT/build/Andriloft.app}"
-DEMO="$ROOT/Examples/HelloAndroid/build/HelloAndroid.apk"
+DEMO="${ANDRILOFT_DEMO_APK:-$ROOT/Examples/HelloAndroid/build/HelloAndroid.apk}"
 if [[ ! -f "$DEMO" ]]; then
+    if [[ -n "${ANDRILOFT_DEMO_APK:-}" ]]; then
+        printf 'Configured example APK does not exist: %s\n' "$DEMO" >&2
+        exit 1
+    fi
     DEMO="$ROOT/Tests/AndriloftTests/Fixtures/HelloAndroid.apk"
 fi
 
@@ -17,22 +21,51 @@ elif [[ -n "${1:-}" ]]; then
 fi
 
 cd "$ROOT"
-swift build -c release
-BIN_DIR="$(swift build -c release --show-bin-path)"
+BUILD_FLAGS=(-c release)
+if [[ -n "${ANDRILOFT_SCRATCH_PATH:-}" ]]; then
+    BUILD_FLAGS+=(--scratch-path "$ANDRILOFT_SCRATCH_PATH")
+fi
+if [[ "${ANDRILOFT_UNIVERSAL:-0}" == "1" ]]; then
+    BUILD_FLAGS+=(--arch arm64 --arch x86_64)
+elif [[ "${ANDRILOFT_UNIVERSAL:-0}" != "0" ]]; then
+    printf 'ANDRILOFT_UNIVERSAL must be 0 or 1.\n' >&2
+    exit 1
+fi
+swift build "${BUILD_FLAGS[@]}"
+BIN_DIR="$(swift build "${BUILD_FLAGS[@]}" --show-bin-path)"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$ROOT/Assets/Info.plist" "$APP/Contents/Info.plist"
 cp "$BIN_DIR/Andriloft" "$APP/Contents/MacOS/Andriloft"
 cp "$BIN_DIR/andriloft-check" "$APP/Contents/MacOS/andriloft-check"
 chmod +x "$APP/Contents/MacOS/Andriloft" "$APP/Contents/MacOS/andriloft-check"
-swift "$ROOT/tools/make-icon.swift" "$ROOT/build/Andriloft.iconset"
-iconutil -c icns "$ROOT/build/Andriloft.iconset" -o "$APP/Contents/Resources/Andriloft.icns"
+ICON_WORK="$(mktemp -d "${TMPDIR:-/tmp}/andriloft-icon.XXXXXX")"
+trap 'rm -rf "$ICON_WORK"' EXIT
+swift "$ROOT/tools/make-icon.swift" "$ICON_WORK/Andriloft.iconset"
+iconutil -c icns "$ICON_WORK/Andriloft.iconset" -o "$APP/Contents/Resources/Andriloft.icns"
 if [[ -f "$DEMO" ]]; then
     cp "$DEMO" "$APP/Contents/Resources/HelloAndroid.apk"
 else
     printf 'No demo APK found; run tools/build-example.sh to build the bundled example.\n' >&2
 fi
 plutil -lint "$APP/Contents/Info.plist"
+python3 - "$APP" "$ROOT" <<'PY'
+import json, pathlib, plistlib, subprocess, sys
+app, root = map(pathlib.Path, sys.argv[1:])
+info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
+source_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+dirty = bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=root, text=True).strip())
+payload = {"version": info["CFBundleShortVersionString"], "build": info["CFBundleVersion"],
+           "source_sha": source_sha, "source_dirty": dirty, "configuration": "release",
+           "signing": "ad-hoc", "notarized": False}
+(app / "Contents/Resources/build-info.json").write_text(json.dumps(payload, indent=2) + "\n")
+PY
 /usr/bin/xattr -cr "$APP"
+codesign --force --sign - --timestamp=none "$APP/Contents/MacOS/andriloft-check"
 codesign --force --sign - "$APP"
 codesign --verify --deep --strict "$APP"
+codesign --verify --strict --all-architectures "$APP/Contents/MacOS/andriloft-check"
+if [[ "${ANDRILOFT_UNIVERSAL:-0}" == "1" ]]; then
+    lipo -verify_arch arm64 x86_64 "$APP/Contents/MacOS/Andriloft"
+    lipo -verify_arch arm64 x86_64 "$APP/Contents/MacOS/andriloft-check"
+fi
 printf 'Packaged %s\n' "$APP"
