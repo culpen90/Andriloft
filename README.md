@@ -17,6 +17,16 @@ The app uses an ad hoc code signature and is not notarized or signed with an App
 
 Choose **Check for Updates…** in Andriloft's sidebar or app menu, then **Install Update** when a new version is available. Andriloft verifies, downloads, installs, and restarts automatically, keeping your imported APK library and saved preferences. Open Android app windows close for the restart. Releases predating the updater need one manual installation of an updater-enabled build.
 
+## App marketplace
+
+Open **Marketplace**, browse the latest apps from APKMirror or search by name, and press **Download**. Connect your Google account once when prompted. Andriloft asks **Google Antigravity with high reasoning effort** to choose the best standalone APK, verifies the downloaded package, and saves it in `~/Downloads/Andriloft/`. The button shows ordinary preparation and download progress; prompts, reasoning, and variant selection stay out of the interface. Cancel and retry use the same button.
+
+Andriloft prepares an app-owned copy of Google's signed Antigravity CLI. Google account setup opens the official CLI and browser sign-in flow; subsequent downloads reuse Google's saved credentials. Model inference runs remotely: no Gemma weights, Ollama server, or local inference engine is installed or started. App names, bounded release metadata, and basic computer compatibility specs (CPU architecture, macOS version, RAM, CPU count, and available storage) are sent to Google, while app files download from APKMirror. Google account availability and quota apply. See [marketplace implementation and validation](docs/MARKETPLACE.md) for the exact integration.
+
+Antigravity compares actual release metadata, including stable/beta status, architecture, Android requirements, and DPI. It can choose an older release where that is a better fit. The final choice must refer to a discovered candidate; a failed selection stops the download and offers retry. Split APK bundles are excluded because Andriloft cannot import them. Downloading an APK does not establish that its Android APIs are supported. Control-click a downloaded card to **Show in Finder** or **Add to My apps**; downloaded code never runs automatically.
+
+App listings and files come from [APKMirror](https://www.apkmirror.com/). Its [FAQ](https://www.apkmirror.com/faq/) explains standalone APKs and split bundles. If APKMirror is unavailable or requires an interactive browser check, the marketplace reports that the page could not load.
+
 ## Run
 
 Requires macOS 13 or newer. Build with Xcode Command Line Tools and Swift 5.9 or newer:

@@ -15,14 +15,16 @@ let package = Package(
         .systemLibrary(name: "CZlib", pkgConfig: "zlib"),
         .target(name: "AndriloftCore", dependencies: ["CZlib"]),
         .target(name: "AndriloftRuntime", dependencies: ["AndriloftCore"]),
+        .target(name: "AndriloftMarketplace", dependencies: ["AndriloftCore"]),
         .target(name: "AndriloftUpdates", dependencies: [.product(name: "Sparkle", package: "Sparkle")]),
         .executableTarget(
             name: "Andriloft",
-            dependencies: ["AndriloftRuntime", "AndriloftUpdates"],
+            dependencies: ["AndriloftRuntime", "AndriloftUpdates", "AndriloftMarketplace"],
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
-        .executableTarget(name: "AndriloftCheck", dependencies: ["AndriloftRuntime"]),
+        .executableTarget(name: "AndriloftCheck", dependencies: ["AndriloftRuntime", "AndriloftMarketplace"]),
         .testTarget(name: "AndriloftTests", dependencies: ["AndriloftRuntime"], resources: [.copy("Fixtures")]),
-        .testTarget(name: "AndriloftUpdatesTests", dependencies: ["AndriloftUpdates"])
+        .testTarget(name: "AndriloftUpdatesTests", dependencies: ["AndriloftUpdates"]),
+        .testTarget(name: "AndriloftMarketplaceTests", dependencies: ["AndriloftMarketplace"], resources: [.copy("Fixtures")])
     ]
 )

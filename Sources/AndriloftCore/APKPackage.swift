@@ -177,7 +177,7 @@ struct APKZIP {
         }
         var cursor = directoryOffset
         var entries: [String: Entry] = [:]
-        var foldedNames = Set<String>()
+        var canonicalNames = Set<String>()
         var ranges: [Range<Int>] = []
         var totalSize = 0
         for _ in 0..<count {
@@ -209,7 +209,9 @@ struct APKZIP {
                     .contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) else {
                 throw APKError.malformedArchive("A ZIP entry has an unsafe or invalid filename.")
             }
-            guard entries[name] == nil, foldedNames.insert(name.precomposedStringWithCanonicalMapping.lowercased()).inserted else {
+            // Android ZIP paths are case-sensitive. We read entries in memory and
+            // never extract them onto a case-insensitive host filesystem.
+            guard entries[name] == nil, canonicalNames.insert(name.precomposedStringWithCanonicalMapping).inserted else {
                 throw APKError.malformedArchive("Duplicate or ambiguous ZIP entry: \(name).")
             }
             guard size <= Self.maximumEntrySize,
