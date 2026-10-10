@@ -11,22 +11,22 @@ public final class DexVM {
 
     private let files: [DexFile]
     private let host: DexHost
-    private var definitions: [String: (DexClassDefinition, Int)] = [:]
-    private var staticFields: [String: DexValue] = [:]
-    private var initializing = Set<String>()
-    private var initialized = Set<String>()
+    private var definitions: [DexIdentifier: (DexClassDefinition, Int)] = [:]
+    private var staticFields: [DexFieldReference: DexValue] = [:]
+    private var initializing = Set<DexIdentifier>()
+    private var initialized = Set<DexIdentifier>()
     private var depth = 0
     private var steps = 0
     private var allocations = 0
     private var arraySlots = 0
-    private var duplicateClasses = Set<String>()
+    private var duplicateClasses = Set<DexIdentifier>()
 
     public init(files: [DexFile], host: DexHost) {
         self.files = files; self.host = host
         for (index, file) in files.enumerated() {
             for definition in file.classes {
-                if definitions[definition.type] != nil { duplicateClasses.insert(definition.type) }
-                else { definitions[definition.type] = (definition, index) }
+                if definitions[DexIdentifier(definition.type)] != nil { duplicateClasses.insert(DexIdentifier(definition.type)) }
+                else { definitions[DexIdentifier(definition.type)] = (definition, index) }
             }
         }
     }
@@ -36,10 +36,10 @@ public final class DexVM {
             try initialize(type)
             try countAllocation()
             let object = DexObject(type: type)
-            var current: String? = type, seen = Set<String>()
-            while let name = current, let (definition, _) = definitions[name] {
-                guard seen.insert(name).inserted, seen.count <= maximumCallDepth else { throw DexError.malformed("Cyclic or excessive class inheritance") }
-                for field in definition.instanceFields { object.fields[field.reference.key] = zero(field.reference.type) }
+            var current: String? = type, seen = Set<DexIdentifier>()
+            while let name = current, let (definition, _) = definitions[DexIdentifier(name)] {
+                guard seen.insert(DexIdentifier(name)).inserted, seen.count <= maximumCallDepth else { throw DexError.malformed("Cyclic or excessive class inheritance") }
+                for field in definition.instanceFields { object.dexFields[field.reference] = zero(field.reference.type) }
                 current = definition.superclass
             }
             return object
@@ -61,7 +61,7 @@ public final class DexVM {
     private func withExecution<T>(_ body: () throws -> T) throws -> T {
         let topLevel = depth == 0
         if topLevel { steps = 0; allocations = 0; arraySlots = 0 }
-        guard duplicateClasses.isEmpty else { throw DexError.malformed("Duplicate classes across DEX files: \(duplicateClasses.sorted().joined(separator: ", "))") }
+        guard duplicateClasses.isEmpty else { throw DexError.malformed("Duplicate classes across DEX files: \(duplicateClasses.map(\.text).sorted().joined(separator: ", "))") }
         depth += 1
         defer { depth -= 1 }
         guard depth <= maximumCallDepth else { throw DexError.limit("Call depth exceeds \(maximumCallDepth)") }
@@ -71,27 +71,27 @@ public final class DexVM {
     private enum CallKind { case virtual, superCall, direct, staticCall, interface }
 
     private func initialize(_ type: String) throws {
-        guard !initialized.contains(type), !initializing.contains(type), let (definition, _) = definitions[type] else { return }
+        guard !initialized.contains(DexIdentifier(type)), !initializing.contains(DexIdentifier(type)), let (definition, _) = definitions[DexIdentifier(type)] else { return }
         guard initializing.count < maximumCallDepth else { throw DexError.limit("Class initialization depth") }
-        initializing.insert(type)
-        defer { initializing.remove(type) }
+        initializing.insert(DexIdentifier(type))
+        defer { initializing.remove(DexIdentifier(type)) }
         if let superclass = definition.superclass { try initialize(superclass) }
         for (index, field) in definition.staticFields.enumerated() {
-            staticFields[field.reference.key] = index < definition.staticValues.count
+            staticFields[field.reference] = index < definition.staticValues.count
                 ? try coerce(definition.staticValues[index], to: field.reference.type)
                 : zero(field.reference.type)
         }
         if let constructor = definition.methods.first(where: { $0.reference.name == "<clinit>" && $0.reference.descriptor == "()V" }) {
             _ = try call(constructor.reference, receiver: nil, arguments: [], kind: .staticCall, caller: nil)
         }
-        initialized.insert(type)
+        initialized.insert(DexIdentifier(type))
     }
 
     private func lookup(_ owner: String, _ name: String, _ descriptor: String) throws -> (DexEncodedMethod, Int)? {
-        var current: String? = owner, seen = Set<String>()
-        while let type = current, let (definition, file) = definitions[type] {
-            guard seen.insert(type).inserted, seen.count <= maximumCallDepth else { throw DexError.malformed("Cyclic class hierarchy") }
-            if let method = definition.methods.first(where: { $0.reference.name == name && $0.reference.descriptor == descriptor }) {
+        var current: String? = owner, seen = Set<DexIdentifier>()
+        while let type = current, let (definition, file) = definitions[DexIdentifier(type)] {
+            guard seen.insert(DexIdentifier(type)).inserted, seen.count <= maximumCallDepth else { throw DexError.malformed("Cyclic class hierarchy") }
+            if let method = definition.methods.first(where: { DexIdentifier($0.reference.name) == DexIdentifier(name) && DexIdentifier($0.reference.descriptor) == DexIdentifier(descriptor) }) {
                 return (method, file)
             }
             current = definition.superclass
@@ -100,9 +100,9 @@ public final class DexVM {
     }
 
     private func externalOwner(_ owner: String) throws -> String {
-        var current = owner, seen = Set<String>()
-        while let (definition, _) = definitions[current], let superclass = definition.superclass {
-            guard seen.insert(current).inserted, seen.count <= maximumCallDepth else { throw DexError.malformed("Cyclic class hierarchy") }
+        var current = owner, seen = Set<DexIdentifier>()
+        while let (definition, _) = definitions[DexIdentifier(current)], let superclass = definition.superclass {
+            guard seen.insert(DexIdentifier(current)).inserted, seen.count <= maximumCallDepth else { throw DexError.malformed("Cyclic class hierarchy") }
             current = superclass
         }
         return current
@@ -118,12 +118,12 @@ public final class DexVM {
             if kind != .staticCall {
                 guard let value = receiver, !isNull(value) else { throw DexError.runtime("Null receiver for \(reference)") }
                 if kind == .virtual || kind == .interface { lookupOwner = valueType(value) ?? reference.owner }
-                if kind == .superCall, let caller, let superclass = definitions[caller]?.0.superclass { lookupOwner = superclass }
+                if kind == .superCall, let caller, let superclass = definitions[DexIdentifier(caller)]?.0.superclass { lookupOwner = superclass }
                 receiver = try coerce(value, to: "Ljava/lang/Object;")
             }
             let found: (DexEncodedMethod, Int)?
             if kind == .direct {
-                found = definitions[reference.owner].flatMap { entry in
+                found = definitions[DexIdentifier(reference.owner)].flatMap { entry in
                     entry.0.methods.first(where: { $0.reference == reference }).map { ($0, entry.1) }
                 }
             } else { found = try lookup(lookupOwner, reference.name, reference.descriptor) }
@@ -145,7 +145,7 @@ public final class DexVM {
                 }
             }
             // A missing application constructor is not an implicit call to its framework superclass.
-            if kind == .direct && definitions[reference.owner] != nil {
+            if kind == .direct && definitions[DexIdentifier(reference.owner)] != nil {
                 throw DexError.runtime("Application method missing: \(reference)")
             }
             let hostReference = DexMethodReference(owner: owner, name: reference.name, descriptor: reference.descriptor)
@@ -154,11 +154,11 @@ public final class DexVM {
     }
 
     private func field(_ reference: DexFieldReference, isStatic: Bool) throws -> DexFieldReference {
-        var current: String? = reference.owner, seen = Set<String>()
-        while let type = current, let (definition, _) = definitions[type] {
-            guard seen.insert(type).inserted, seen.count <= maximumCallDepth else { throw DexError.malformed("Cyclic field hierarchy") }
+        var current: String? = reference.owner, seen = Set<DexIdentifier>()
+        while let type = current, let (definition, _) = definitions[DexIdentifier(type)] {
+            guard seen.insert(DexIdentifier(type)).inserted, seen.count <= maximumCallDepth else { throw DexError.malformed("Cyclic field hierarchy") }
             let list = isStatic ? definition.staticFields : definition.instanceFields
-            if let field = list.first(where: { $0.reference.name == reference.name && $0.reference.type == reference.type }) { return field.reference }
+            if let field = list.first(where: { DexIdentifier($0.reference.name) == DexIdentifier(reference.name) && DexIdentifier($0.reference.type) == DexIdentifier(reference.type) }) { return field.reference }
             current = definition.superclass
         }
         throw DexError.unsupported("Field \(reference.key)")
@@ -391,14 +391,14 @@ public final class DexVM {
                 let reference = try field(DexFile.element(file.fields, Int(word(pc + 1)), "instance field"), isStatic: false)
                 let value = try object(b4)
                 guard try isInstance(.object(value), of: reference.owner) else { throw DexError.runtime("Field receiver has incompatible type") }
-                if opcode <= 0x58 { try put(a4, value.fields[reference.key] ?? zero(reference.type), wide: opcode == 0x53) }
-                else { value.fields[reference.key] = try coerce(get(a4), to: reference.type) }
+                if opcode <= 0x58 { try put(a4, value.dexFields[reference] ?? zero(reference.type), wide: opcode == 0x53) }
+                else { value.dexFields[reference] = try coerce(get(a4), to: reference.type) }
                 next = pc + 2
             case 0x60...0x6d:
                 let reference = try field(DexFile.element(file.fields, Int(word(pc + 1)), "static field"), isStatic: true)
                 try initialize(reference.owner)
-                if opcode <= 0x66 { try put(a8, staticFields[reference.key] ?? zero(reference.type), wide: opcode == 0x61) }
-                else { staticFields[reference.key] = try coerce(get(a8), to: reference.type) }
+                if opcode <= 0x66 { try put(a8, staticFields[reference] ?? zero(reference.type), wide: opcode == 0x61) }
+                else { staticFields[reference] = try coerce(get(a8), to: reference.type) }
                 next = pc + 2
             case 0x6e...0x72, 0x74...0x78:
                 let target = try DexFile.element(file.methods, Int(word(pc + 1)), "invoked method")
@@ -592,7 +592,7 @@ public final class DexVM {
         case (.int(let x), .int(let y)): return x == y
         case (.object(let x), .object(let y)): return x === y
         case (.array(let x), .array(let y)): return x === y
-        case (.string(let x), .string(let y)): return x == y // DEX constant strings are interned.
+        case (.string(let x), .string(let y)): return DexIdentifier(x) == DexIdentifier(y) // DEX constant strings are interned.
         default: return false
         }
     }
@@ -601,7 +601,7 @@ public final class DexVM {
     }
     private func isInstance(_ value: DexValue, of target: String) throws -> Bool {
         guard let start = valueType(value) else { return false }
-        if target == "Ljava/lang/Object;" || target == start { return true }
+        if target == "Ljava/lang/Object;" || DexIdentifier(target) == DexIdentifier(start) { return true }
         if start.hasPrefix("[") { return target == "Ljava/lang/Cloneable;" || target == "Ljava/io/Serializable;" }
         let externalParents: [String: [String]] = [
             "Ljava/lang/String;": ["Ljava/lang/CharSequence;", "Ljava/io/Serializable;", "Ljava/lang/Comparable;"],
@@ -619,12 +619,12 @@ public final class DexVM {
             "Landroid/widget/ScrollView;": ["Landroid/widget/FrameLayout;", "Landroid/view/ViewGroup;", "Landroid/view/View;"],
             "Landroid/view/ViewGroup;": ["Landroid/view/View;"]
         ]
-        var pending = [start], seen = Set<String>()
+        var pending = [start], seen = Set<DexIdentifier>()
         while let type = pending.popLast() {
-            if type == target { return true }
-            guard seen.insert(type).inserted else { continue }
+            if DexIdentifier(type) == DexIdentifier(target) { return true }
+            guard seen.insert(DexIdentifier(type)).inserted else { continue }
             guard seen.count <= maximumCallDepth * 4 else { throw DexError.malformed("Excessive class/interface hierarchy") }
-            if let (definition, _) = definitions[type] {
+            if let (definition, _) = definitions[DexIdentifier(type)] {
                 if let superclass = definition.superclass { pending.append(superclass) }
                 pending.append(contentsOf: definition.interfaces)
             } else { pending.append(contentsOf: externalParents[type] ?? []) }

@@ -96,7 +96,7 @@ Every push or merge to `main` automatically publishes a new GitHub release after
 
 Each version gets newly built universal ZIP and DMG downloads, a signed Sparkle appcast, matching app version metadata, an increasing build number, checksums, and source provenance. Releases remain drafts until all uploaded files have been downloaded again and verified. The bot uses GitHub's built-in token, free ad hoc macOS signing, and the repository's `SPARKLE_PRIVATE_KEY` secret to authenticate updates. No Apple Developer account or certificate is needed. See [the release guide](docs/RELEASING.md) for manual increments and failure recovery.
 
-Contributors must also update source version defaults, current documentation, release notes, and compatibility information that the bot does not maintain. Follow the [contribution guide](CONTRIBUTING.md) before submitting a change. The [0.3.1 source release notes](docs/releases/v0.3.1.md) describe this version-reference correction; the download link above always resolves to the latest published release.
+Contributors must also update source version defaults, current documentation, release notes, and compatibility information that the bot does not maintain. Follow the [contribution guide](CONTRIBUTING.md) before submitting a change. The [pending 0.3.2 source release notes](docs/releases/v0.3.2.md) describe DEX identifier and compressed-asset validation fixes for valid APKs rejected after marketplace download, plus clearer validation errors. The download link above always resolves to the latest published release.
 
 ## Architecture
 

@@ -216,9 +216,12 @@ struct APKZIP {
             }
             guard size <= Self.maximumEntrySize,
                   size <= Self.maximumArchiveSize - totalSize,
-                  size == 0 || (compressed > 0 && size / max(compressed, 1) <= 500) else {
+                  size == 0 || compressed > 0 else {
                 throw APKError.unsupportedArchive("ZIP expansion limits exceeded by \(name).")
             }
+            // Valid APKs can contain zero-filled assets that compress by more than
+            // 1,000 times. Absolute entry/total limits bound expansion, and read()
+            // inflates into a fixed-size buffer and checks the declared length.
             totalSize += size
             try bytes.check(localOffset, 30, limit: directoryOffset)
             guard try bytes.u32(localOffset) == 0x04034b50,

@@ -24,6 +24,16 @@ public struct DexMethodReference: Hashable, CustomStringConvertible {
         self.owner = owner; self.name = name; self.descriptor = descriptor
     }
     public var description: String { "\(owner)->\(name)\(descriptor)" }
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        DexIdentifier(lhs.owner) == DexIdentifier(rhs.owner)
+            && DexIdentifier(lhs.name) == DexIdentifier(rhs.name)
+            && DexIdentifier(lhs.descriptor) == DexIdentifier(rhs.descriptor)
+    }
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(DexIdentifier(owner))
+        hasher.combine(DexIdentifier(name))
+        hasher.combine(DexIdentifier(descriptor))
+    }
 }
 
 public struct DexFieldReference: Hashable {
@@ -31,6 +41,16 @@ public struct DexFieldReference: Hashable {
     public let name: String
     public let type: String
     public var key: String { "\(owner)->\(name):\(type)" }
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        DexIdentifier(lhs.owner) == DexIdentifier(rhs.owner)
+            && DexIdentifier(lhs.name) == DexIdentifier(rhs.name)
+            && DexIdentifier(lhs.type) == DexIdentifier(rhs.type)
+    }
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(DexIdentifier(owner))
+        hasher.combine(DexIdentifier(name))
+        hasher.combine(DexIdentifier(type))
+    }
 }
 
 public struct DexEncodedField {
@@ -150,14 +170,16 @@ public struct DexFile {
                 descriptor: try Self.element(descriptors, Int(reader.u16(offset + 2)), "method prototype")))
         }
         var classes = [DexClassDefinition]()
-        var seenTypes = Set<String>()
+        // DEX symbols preserve UTF-16 code units. Swift String equality applies
+        // Unicode canonical equivalence, which can merge distinct obfuscated names.
+        var seenTypes = Set<DexIdentifier>()
         var codeCache: [Int: DexCode] = [:]
         var instructionUnits = 0
         var staticValueBudget = min(data.count, 2_000_000)
         for index in 0..<classTable.count {
             let offset = classTable.offset + index * 32
             let type = try Self.element(types, Int(reader.u32(offset)), "class type")
-            guard seenTypes.insert(type).inserted else { throw DexError.malformed("Duplicate class \(type)") }
+            guard seenTypes.insert(DexIdentifier(type)).inserted else { throw DexError.malformed("Duplicate class \(type)") }
             let flags = try reader.u32(offset + 4)
             let superclassIndex = try reader.u32(offset + 8)
             let superclass = superclassIndex == UInt32.max ? nil : try Self.element(types, Int(superclassIndex), "superclass")
@@ -183,7 +205,7 @@ public struct DexFile {
                         if position > 0 && delta == 0 { throw DexError.malformed("Duplicate class field") }
                         fieldIndex += delta
                         let field = try Self.element(fields, fieldIndex, "encoded field")
-                        guard field.owner == type else { throw DexError.malformed("Field belongs to another class") }
+                        guard DexIdentifier(field.owner) == DexIdentifier(type) else { throw DexError.malformed("Field belongs to another class") }
                         result.append(DexEncodedField(reference: field, accessFlags: UInt32(try reader.uleb(&cursor))))
                     }
                     return result
@@ -195,7 +217,7 @@ public struct DexFile {
                         if position > 0 && delta == 0 { throw DexError.malformed("Duplicate class method") }
                         methodIndex += delta
                         let method = try Self.element(methods, methodIndex, "encoded method")
-                        guard method.owner == type else { throw DexError.malformed("Method belongs to another class") }
+                        guard DexIdentifier(method.owner) == DexIdentifier(type) else { throw DexError.malformed("Method belongs to another class") }
                         let access = UInt32(try reader.uleb(&cursor))
                         let codeOffset = try reader.uleb(&cursor)
                         let code: DexCode?
